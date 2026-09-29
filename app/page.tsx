@@ -1,19 +1,40 @@
+"use client"
+
+import { useState } from "react"
+import { getDatabase } from "@/lib/database"
 import { Button } from "@/components/ui/button"
 
-export default function Page() {
+export default function Home() {
+  const [message, setMessage] = useState("Database not connected")
+
+  async function testDatabase() {
+    try {
+      const db = await getDatabase()
+
+      const result = await db.select<{ name: string }[]>(
+        "SELECT name FROM sqlite_master WHERE type = 'table'"
+      )
+
+      setMessage(
+        `Connected. Tables: ${result.map((item) => item.name).join(", ")}`
+      )
+    } catch (error) {
+      setMessage(`Database error: ${String(error)}`)
+    }
+  }
+
   return (
-    <div className="flex min-h-svh p-6">
-      <div className="flex max-w-md min-w-0 flex-col gap-4 text-sm leading-loose">
-        <div>
-          <h1 className="font-medium">Project ready!</h1>
-          <p>You may now add components and start building.</p>
-          <p>We&apos;ve already added the button component for you.</p>
-          <Button className="mt-2">Button</Button>
-        </div>
-        <div className="font-mono text-xs text-muted-foreground">
-          (Press <kbd>d</kbd> to toggle dark mode)
-        </div>
-      </div>
-    </div>
+    <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-8">
+      <h1 className="text-3xl font-bold">Massage Booking</h1>
+
+      <Button
+        onClick={testDatabase}
+        className="rounded-lg bg-primary px-6 py-3 text-primary-foreground"
+      >
+        Test SQLite
+      </Button>
+
+      <p>{message}</p>
+    </main>
   )
 }
