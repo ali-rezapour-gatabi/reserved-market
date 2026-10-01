@@ -60,6 +60,11 @@ export function fromJalali(jy: number, jm: number, jd: number) {
   return jalaaliToDateObject(jy, jm, jd)
 }
 
+export function startOfJalaliMonth(date: Date) {
+  const { jy, jm } = jalaliParts(date)
+  return fromJalali(jy, jm, 1)
+}
+
 export function daysInJalaliMonth(jy: number, jm: number) {
   return jalaaliMonthLength(jy, jm)
 }

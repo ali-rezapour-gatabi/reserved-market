@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { addDays, startOfDay } from "date-fns"
-import { Pencil, RefreshCw } from "lucide-react"
+import { CalendarPlus, Check, Pencil, RefreshCw, Undo2 } from "lucide-react"
 
 import { DayStrip } from "@/components/day-strip"
-import { CreateBook } from "@/components/create-book"
+import { CreateBook, type CreateBookPrefill } from "@/components/create-book"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { EditBook } from "@/components/edit-book"
+import { ExportExcelButton } from "@/components/export-excel"
 import { Button } from "@/components/ui/button"
 import { toFa, toFaDigits } from "@/lib/jalali"
 import { formatNumericDate, formatNumericDateTime } from "@/lib/jalali"
@@ -17,10 +18,13 @@ import {
   weekdayName,
 } from "@/lib/schedule"
 import {
+  completeDayAppointments,
   createBooking,
-  listForDay,
+  listForRange,
   listServices,
   listTherapists,
+  reopenDayAppointments,
+  setAppointmentStatus,
   updateAppointment,
 } from "@/lib/repositories"
 import type {
@@ -43,12 +47,11 @@ const STATUS_STYLES: Record<string, string> = {
 export default function DashboardPage() {
   const [services, setServices] = useState<Service[]>([])
   const [therapists, setTherapists] = useState<Therapist[]>([])
-  // روز انتخاب‌شده؛ به‌صورت پیش‌فرض امروز است
   const [selectedDay, setSelectedDay] = useState<Date>(() => startOfToday())
   const [dayAppointments, setDayAppointments] = useState<AppointmentRow[]>([])
   const [editing, setEditing] = useState<AppointmentRow | null>(null)
+  const [repeatSource, setRepeatSource] = useState<AppointmentRow | null>(null)
   const [feedback, setFeedback] = useState<Feedback | null>(null)
-  // با هر تغییر داده یکی زیاد می‌شود تا لیست روز دوباره خوانده شود
   const [revision, setRevision] = useState(0)
 
   const bumpRevision = useCallback(() => {
@@ -79,13 +82,12 @@ export default function DashboardPage() {
     }
   }, [revision])
 
-  // جدول همیشه فقط نوبت‌های روز انتخاب‌شده را نشان می‌دهد
   useEffect(() => {
     let active = true
     const from = startOfDay(selectedDay)
     const to = addDays(from, 1)
 
-    listForDay(from, to)
+    listForRange(from, to)
       .then((rows) => {
         if (active) {
           setDayAppointments(rows)
@@ -124,6 +126,92 @@ export default function DashboardPage() {
     setEditing(null)
     bumpRevision()
   }
+
+  const pendingCount = dayAppointments.filter(
+    (row) => row.status === "scheduled"
+  ).length
+
+  const doneCount = dayAppointments.filter(
+    (row) => row.status === "completed"
+  ).length
+
+  const dayDone = pendingCount === 0 && doneCount > 0
+
+  const handleToggleDayDone = async () => {
+    const from = startOfDay(selectedDay)
+    const to = addDays(from, 1)
+
+    try {
+      if (dayDone) {
+        const count = await reopenDayAppointments(from, to)
+
+        setFeedback({
+          kind: "success",
+          text: `${toFa(count)} نوبت به حالت زمان‌بندی‌شده بازگشت.`,
+        })
+      } else {
+        const count = await completeDayAppointments(from, to)
+
+        setFeedback({
+          kind: "success",
+          text: `${toFa(count)} نوبت این روز انجام‌شده علامت خورد.`,
+        })
+      }
+
+      bumpRevision()
+    } catch (error) {
+      setFeedback({
+        kind: "error",
+        text:
+          error instanceof Error
+            ? error.message
+            : "تغییر وضعیت روز با خطا مواجه شد.",
+      })
+    }
+  }
+
+  const handleToggleRowDone = async (row: AppointmentRow) => {
+    const nextStatus = row.status === "completed" ? "scheduled" : "completed"
+
+    try {
+      await setAppointmentStatus(row.id, nextStatus)
+
+      setFeedback({
+        kind: "success",
+        text:
+          nextStatus === "completed"
+            ? `نوبت ${row.full_name} انجام‌شده علامت خورد.`
+            : `نوبت ${row.full_name} به حالت زمان‌بندی‌شده بازگشت.`,
+      })
+
+      bumpRevision()
+    } catch (error) {
+      setFeedback({
+        kind: "error",
+        text:
+          error instanceof Error ? error.message : "تغییر وضعیت نوبت با خطا مواجه شد.",
+      })
+    }
+  }
+
+  const repeatPrefill: CreateBookPrefill | undefined = repeatSource
+    ? {
+        fullName: repeatSource.full_name,
+        phone: repeatSource.phone,
+        serviceIds: repeatSource.service_ids,
+        therapistId:
+          repeatSource.therapist_id === null
+            ? ""
+            : String(repeatSource.therapist_id),
+        notes: repeatSource.notes ?? "",
+        time: (() => {
+          const start = new Date(repeatSource.start_at)
+          return `${String(start.getHours()).padStart(2, "0")}:${String(
+            start.getMinutes()
+          ).padStart(2, "0")}`
+        })(),
+      }
+    : undefined
 
   const columns: DataTableColumn<AppointmentRow>[] = [
     {
@@ -197,17 +285,57 @@ export default function DashboardPage() {
       header: "عملیات",
       sortable: false,
       align: "start",
-      cell: (row) => (
-        <Button
-          type="button"
-          size="xs"
-          variant="ghost"
-          onClick={() => setEditing(row)}
-        >
-          <Pencil className="size-3.5" />
-          ویرایش
-        </Button>
-      ),
+      cell: (row) => {
+        const done = row.status === "completed"
+        const toggleable =
+          row.status === "completed" || row.status === "scheduled"
+
+        return (
+          <div className="flex items-center gap-1">
+            {toggleable && (
+              <Button
+                type="button"
+                size="xs"
+                variant={done ? "secondary" : "ghost"}
+                onClick={() => handleToggleRowDone(row)}
+                aria-pressed={done}
+                title={
+                  done
+                    ? "بازگرداندن این نوبت به حالت زمان‌بندی‌شده"
+                    : "علامت‌زدن این نوبت به‌عنوان انجام‌شده"
+                }
+              >
+                {done ? (
+                  <Undo2 className="size-3.5" />
+                ) : (
+                  <Check className="size-3.5" />
+                )}
+                {done ? "بازگشت" : "انجام شد"}
+              </Button>
+            )}
+
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              onClick={() => setRepeatSource(row)}
+            >
+              <CalendarPlus className="size-3.5" />
+              افزودن نوبت
+            </Button>
+
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              onClick={() => setEditing(row)}
+            >
+              <Pencil className="size-3.5" />
+              ویرایش
+            </Button>
+          </div>
+        )
+      },
     },
   ]
 
@@ -256,6 +384,28 @@ export default function DashboardPage() {
               نوسازی
             </Button>
 
+            <ExportExcelButton />
+
+            <Button
+              type="button"
+              size="sm"
+              variant={dayDone ? "secondary" : "outline"}
+              onClick={handleToggleDayDone}
+              disabled={dayDone ? doneCount === 0 : pendingCount === 0}
+              title={
+                dayDone
+                  ? "بازگرداندن نوبت‌های این روز به حالت زمان‌بندی‌شده"
+                  : "علامت‌زدن همهٔ نوبت‌های این روز به‌عنوان انجام‌شده"
+              }
+            >
+              {dayDone ? (
+                <Undo2 className="size-4" />
+              ) : (
+                <Check className="size-4" />
+              )}
+              {dayDone ? "بازگشت به زمان‌بندی" : "پایان کار روز"}
+            </Button>
+
             <CreateBook
               services={services}
               therapists={therapists}
@@ -263,6 +413,21 @@ export default function DashboardPage() {
             />
           </>
         }
+      />
+
+      <CreateBook
+        key={repeatSource?.id ?? "no-repeat"}
+        services={services}
+        therapists={therapists}
+        onCreate={handleCreate}
+        prefill={repeatPrefill}
+        open={repeatSource !== null}
+        onOpenChange={(value) => {
+          if (!value) {
+            setRepeatSource(null)
+          }
+        }}
+        title="افزودن نوبت جدید"
       />
 
       <EditBook

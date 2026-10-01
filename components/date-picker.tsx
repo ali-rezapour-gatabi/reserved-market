@@ -73,18 +73,20 @@ export function DatePicker({
   return (
     <div className={cn("space-y-2", className)}>
       <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger className="w-full">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={disabled}
-            aria-expanded={open}
-            className="h-11 w-full justify-start"
-          >
-            <CalendarDays className="ml-2 size-4 text-primary" />
-            {label()}
-          </Button>
-        </PopoverTrigger>
+        <PopoverTrigger
+          render={
+            <Button
+              type="button"
+              variant="outline"
+              disabled={disabled}
+              aria-expanded={open}
+              className="h-11 w-full justify-start"
+            >
+              <CalendarDays className="ml-2 size-4 text-primary" />
+              {label()}
+            </Button>
+          }
+        />
 
         <PopoverContent className="w-auto p-2" align="start" sideOffset={8}>
           <div

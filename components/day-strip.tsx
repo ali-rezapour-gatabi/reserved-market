@@ -11,15 +11,11 @@ import {
   formatNumericMonth,
   formatTime,
   jalaliParts,
+  startOfJalaliMonth,
   toFa,
 } from "@/lib/jalali"
 
 const WEEKDAY_SHORT_BY_DAY = ["ی", "د", "س", "چ", "پ", "ج", "ش"]
-
-function startOfJalaliMonth(date: Date) {
-  const { jd } = jalaliParts(date)
-  return startOfDay(addDays(date, -(jd - 1)))
-}
 
 function jalaliMonthLength(monthStart: Date) {
   const { jm } = jalaliParts(monthStart)

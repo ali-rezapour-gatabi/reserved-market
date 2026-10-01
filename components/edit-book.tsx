@@ -356,7 +356,7 @@ export function EditBook({
 
             <Separator />
 
-            <div className="min-h-0 flex-1 overflow-y-auto bg-muted/30 p-4 sm:p-6">
+            <div className="max-h-[72vh] min-h-0 flex-1 overflow-y-auto bg-muted/30 p-4 sm:p-6">
               <div className="grid gap-4 lg:grid-cols-2 lg:gap-5">
                 <div className="space-y-4 lg:space-y-5">
                   <Panel
@@ -588,7 +588,6 @@ export function EditBook({
 
             <Separator />
 
-            {/* ---------- فوتر ---------- */}
             <DialogFooter className="shrink-0 flex-col-reverse items-stretch gap-3 bg-card p-4 sm:flex-row sm:items-center sm:justify-start sm:px-6">
               <div className="flex gap-2">
                 <Button

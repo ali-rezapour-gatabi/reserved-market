@@ -1,7 +1,16 @@
 import { getDatabase } from "@/lib/database"
+import { toEnDigits } from "@/lib/jalali"
 
 export type AppointmentStatus =
   "scheduled" | "completed" | "cancelled" | "no_show"
+
+export type Customer = {
+  id: number
+  full_name: string
+  phone: string
+  notes: string | null
+  updated_at: string
+}
 
 export type Service = {
   id: number
@@ -78,7 +87,6 @@ export type AppointmentRow = {
   therapist_name: string | null
 }
 
-/* ---------------------------------- services --------------------------------- */
 
 export async function listAllServices() {
   const db = await getDatabase()
@@ -96,7 +104,6 @@ export async function listServices() {
   )
 }
 
-// خدمت‌های انتخاب‌شده را به همان ترتیب ورودی برمی‌گرداند و قیمت را جمع می‌زند
 async function resolveServices(ids: number[]) {
   const unique = [...new Set(ids.filter((id) => Number.isFinite(id)))]
 
@@ -189,7 +196,6 @@ export async function deleteService(id: number) {
   return listAllServices()
 }
 
-/* --------------------------------- therapists -------------------------------- */
 
 export async function listAllTherapists() {
   const db = await getDatabase()
@@ -271,7 +277,51 @@ export async function deleteTherapist(id: number) {
   return listAllTherapists()
 }
 
-/* -------------------------------- appointments ------------------------------- */
+
+function normalizeCustomerQuery(value: string) {
+  return toEnDigits(value)
+    .replace(/[يى]/g, "ی")
+    .replace(/ك/g, "ک")
+    .replace(/\u200c/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+export async function listCustomers(limit = 20) {
+  const db = await getDatabase()
+
+  return db.select<Customer[]>(
+    "SELECT id, full_name, phone, notes, updated_at FROM customers WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT ?",
+    [limit]
+  )
+}
+
+export async function searchCustomers(query: string, limit = 8) {
+  const needle = normalizeCustomerQuery(query)
+
+  if (needle.length === 0) {
+    return listCustomers(limit)
+  }
+
+  const db = await getDatabase()
+  const like = `%${needle}%`
+
+  return db.select<Customer[]>(
+    `SELECT id, full_name, phone, notes, updated_at
+     FROM customers
+     WHERE deleted_at IS NULL
+       AND (
+         REPLACE(REPLACE(full_name, 'ي', 'ی'), 'ك', 'ک') LIKE ?
+         OR REPLACE(phone, ' ', '') LIKE ?
+       )
+     ORDER BY
+       CASE WHEN REPLACE(REPLACE(full_name, 'ي', 'ی'), 'ك', 'ک') = ? THEN 0 ELSE 1 END,
+       updated_at DESC
+     LIMIT ?`,
+    [like, like.replace(/\s/g, ""), needle, limit]
+  )
+}
+
 
 async function findBusyRanges(sessions: SessionRange[], excludeId?: number) {
   const db = await getDatabase()
@@ -296,7 +346,6 @@ async function resolveCustomerId(customer: NewBooking["customer"]) {
   const fullName = customer.full_name
   const phone = customer.phone
 
-  // بدون شماره تماس، مشتری بر اساس نام فامیلی پیدا یا ادغام می‌شود
   const rows =
     phone.length > 0
       ? await db.select<{ id: number }[]>(
@@ -396,7 +445,6 @@ const appointmentSelect = `SELECT appointments.id,
 
 type AppointmentBaseRow = Omit<AppointmentRow, "service_ids" | "service_names">
 
-// خدمت‌های هر نوبت را جداگانه می‌خواند تا یک نوبت بتواند چند خدمت داشته باشد
 async function withServices(rows: AppointmentBaseRow[]) {
   if (rows.length === 0) {
     return [] as AppointmentRow[]
@@ -478,7 +526,7 @@ export async function updateAppointment(id: number, input: AppointmentEdit) {
   await replaceAppointmentServices(id, services)
 }
 
-export async function listForDay(from: Date, to: Date) {
+export async function listForRange(from: Date, to: Date) {
   const db = await getDatabase()
 
   const rows = await db.select<AppointmentBaseRow[]>(
@@ -502,4 +550,38 @@ export async function listAllAppointments(limit = 500) {
   )
 
   return withServices(rows)
+}
+
+export async function setAppointmentStatus(
+  id: number,
+  status: AppointmentStatus
+) {
+  const db = await getDatabase()
+
+  await db.execute(
+    "UPDATE appointments SET status = ?, updated_at = ? WHERE id = ?",
+    [status, new Date().toISOString(), id]
+  )
+}
+
+export async function completeDayAppointments(from: Date, to: Date) {
+  const db = await getDatabase()
+
+  const result = await db.execute(
+    "UPDATE appointments SET status = 'completed', updated_at = ? WHERE status = 'scheduled' AND start_at >= ? AND start_at < ?",
+    [new Date().toISOString(), from.toISOString(), to.toISOString()]
+  )
+
+  return result.rowsAffected
+}
+
+export async function reopenDayAppointments(from: Date, to: Date) {
+  const db = await getDatabase()
+
+  const result = await db.execute(
+    "UPDATE appointments SET status = 'scheduled', updated_at = ? WHERE status = 'completed' AND start_at >= ? AND start_at < ?",
+    [new Date().toISOString(), from.toISOString(), to.toISOString()]
+  )
+
+  return result.rowsAffected
 }

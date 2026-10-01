@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { CustomerSearch } from "@/components/customer-search"
 import { DatePicker } from "@/components/date-picker"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -67,10 +68,24 @@ import type {
 
 type ScheduleMode = "dates" | "weekly"
 
+export type CreateBookPrefill = {
+  fullName: string
+  phone: string
+  serviceIds: number[]
+  therapistId: string
+  notes?: string
+  time?: string
+}
+
 type CreateBookProps = {
   services: Service[]
   therapists: Therapist[]
   onCreate: (booking: NewBooking) => Promise<void>
+  prefill?: CreateBookPrefill
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  title?: string
+  trigger?: React.ReactNode
 }
 
 const QUICK_TIMES = [
@@ -108,9 +123,15 @@ const emptyForm = {
   totalSessions: "8",
 }
 
-function createEmptyForm(today: Date) {
+function createEmptyForm(today: Date, prefill?: CreateBookPrefill) {
   return {
     ...emptyForm,
+    fullName: prefill?.fullName ?? "",
+    phone: prefill?.phone ?? "",
+    serviceIds: prefill?.serviceIds ?? [],
+    therapistId: prefill?.therapistId ?? "",
+    notes: prefill?.notes ?? "",
+    time: prefill?.time ?? "",
     dates: [today],
     startDate: [today],
   }
@@ -179,10 +200,17 @@ export function CreateBook({
   services,
   therapists,
   onCreate,
+  prefill,
+  open: openProp,
+  onOpenChange,
+  title = "ثبت نوبت جدید",
+  trigger,
 }: CreateBookProps) {
-  const [open, setOpen] = useState(false)
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
+  const isControlled = openProp !== undefined
+  const open = isControlled ? openProp : uncontrolledOpen
   const today = useMemo(() => startOfToday(), [])
-  const [form, setForm] = useState(() => createEmptyForm(today))
+  const [form, setForm] = useState(() => createEmptyForm(today, prefill))
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
 
@@ -226,8 +254,6 @@ export function CreateBook({
     [form.mode, form.dates, weeklySessions]
   )
 
-  // برچسب نمایشی گزینه‌ها؛ با پراپ items به خود Select داده می‌شود تا
-  // داخل SelectTrigger نام متخصص نمایش داده شود، نه مقدار خام (id)
   const therapistOptions = therapists.map((item) => ({
     value: String(item.id),
     label: item.specialty ? `${item.name} — ${item.specialty}` : item.name,
@@ -249,7 +275,7 @@ export function CreateBook({
   }, [form.time, durationMinutes, today])
 
   const resetForm = () => {
-    setForm(createEmptyForm(today))
+    setForm(createEmptyForm(today, prefill))
     setError("")
   }
 
@@ -329,12 +355,21 @@ export function CreateBook({
       setError("")
       await onCreate(payload)
       resetForm()
-      setOpen(false)
+      changeOpen(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : "ثبت نوبت با خطا مواجه شد.")
     } finally {
       setLoading(false)
     }
+  }
+
+  const changeOpen = (value: boolean) => {
+    if (isControlled) {
+      onOpenChange?.(value)
+      return
+    }
+
+    setUncontrolledOpen(value)
   }
 
   return (
@@ -345,21 +380,23 @@ export function CreateBook({
           return
         }
 
-        setOpen(value)
+        changeOpen(value)
 
         if (!value) {
           resetForm()
         }
       }}
     >
-      <DialogTrigger
-        render={
-          <Button>
-            <CalendarDays className="size-4" />
-            ثبت نوبت جدید
-          </Button>
-        }
-      />
+      {isControlled ? null : (
+        <DialogTrigger
+          render={
+            <Button>
+              <CalendarDays className="size-4" />
+              {trigger ?? title}
+            </Button>
+          }
+        />
+      )}
 
       <DialogContent
         dir="rtl"
@@ -375,7 +412,7 @@ export function CreateBook({
             </div>
             <div className="space-y-0.5">
               <DialogTitle className="text-lg font-bold sm:text-xl">
-                ثبت نوبت جدید
+                {title}
               </DialogTitle>
               <p className="text-xs text-muted-foreground">
                 اطلاعات مشتری، خدمت و روزهای جلسات را وارد کنید.
@@ -395,19 +432,16 @@ export function CreateBook({
                       htmlFor="customer-name"
                       required
                     >
-                      <div className="relative">
-                        <User className="pointer-events-none absolute inset-y-0 right-3 my-auto size-4 text-muted-foreground" />
-                        <Input
-                          id="customer-name"
-                          placeholder="نام مراجعه‌کننده"
-                          value={form.fullName}
-                          onChange={(event) =>
-                            update("fullName", event.target.value)
+                      <CustomerSearch
+                        value={form.fullName}
+                        onValueChange={(value) => update("fullName", value)}
+                        onSelect={(customer) => {
+                          if (customer.phone.length > 0) {
+                            update("phone", customer.phone)
                           }
-                          maxLength={150}
-                          className={cn(inputClass, "pr-9")}
-                        />
-                      </div>
+                        }}
+                        inputClassName={cn(inputClass, "ps-9 text-start")}
+                      />
                     </Field>
 
                     <Field
