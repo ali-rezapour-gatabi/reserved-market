@@ -2,23 +2,29 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { addDays, startOfDay } from "date-fns"
-import { RefreshCw } from "lucide-react"
+import { Pencil, RefreshCw } from "lucide-react"
 
 import { DayStrip } from "@/components/day-strip"
 import { CreateBook } from "@/components/create-book"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
+import { EditBook } from "@/components/edit-book"
 import { Button } from "@/components/ui/button"
-import { toFa } from "@/lib/jalali"
-import { formatNumericDateTime } from "@/lib/jalali"
-import { APPOINTMENT_STATUS_LABELS, weekdayName } from "@/lib/schedule"
+import { toFa, toFaDigits } from "@/lib/jalali"
+import { formatNumericDate, formatNumericDateTime } from "@/lib/jalali"
+import {
+  APPOINTMENT_STATUS_LABELS,
+  startOfToday,
+  weekdayName,
+} from "@/lib/schedule"
 import {
   createBooking,
   listForDay,
   listServices,
   listTherapists,
-  listUpcoming,
+  updateAppointment,
 } from "@/lib/repositories"
 import type {
+  AppointmentEdit,
   AppointmentRow,
   NewBooking,
   Service,
@@ -37,45 +43,44 @@ const STATUS_STYLES: Record<string, string> = {
 export default function DashboardPage() {
   const [services, setServices] = useState<Service[]>([])
   const [therapists, setTherapists] = useState<Therapist[]>([])
-  const [upcoming, setUpcoming] = useState<AppointmentRow[]>([])
-  const [selectedDay, setSelectedDay] = useState<Date | null>(null)
+  // روز انتخاب‌شده؛ به‌صورت پیش‌فرض امروز است
+  const [selectedDay, setSelectedDay] = useState<Date>(() => startOfToday())
   const [dayAppointments, setDayAppointments] = useState<AppointmentRow[]>([])
+  const [editing, setEditing] = useState<AppointmentRow | null>(null)
   const [feedback, setFeedback] = useState<Feedback | null>(null)
-  const [busy, setBusy] = useState(false)
+  // با هر تغییر داده یکی زیاد می‌شود تا لیست روز دوباره خوانده شود
+  const [revision, setRevision] = useState(0)
 
-  const refresh = useCallback(() => {
-    return Promise.all([listServices(), listTherapists(), listUpcoming()])
-      .then(([serviceRows, therapistRows, upcomingRows]) => {
+  const bumpRevision = useCallback(() => {
+    setRevision((prev) => prev + 1)
+  }, [])
+
+  useEffect(() => {
+    let active = true
+
+    Promise.all([listServices(), listTherapists()])
+      .then(([serviceRows, therapistRows]) => {
+        if (!active) return
         setServices(serviceRows)
         setTherapists(therapistRows)
-        setUpcoming(upcomingRows)
       })
       .catch((error) => {
+        if (!active) return
         setServices([])
         setTherapists([])
-        setUpcoming([])
         setFeedback({
           kind: "error",
           text: error instanceof Error ? error.message : "خطای ناشناخته",
         })
       })
-  }, [])
 
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
-
-  const handleRefresh = async () => {
-    setBusy(true)
-    await refresh()
-    setBusy(false)
-  }
-
-  useEffect(() => {
-    if (!selectedDay) {
-      return
+    return () => {
+      active = false
     }
+  }, [revision])
 
+  // جدول همیشه فقط نوبت‌های روز انتخاب‌شده را نشان می‌دهد
+  useEffect(() => {
     let active = true
     const from = startOfDay(selectedDay)
     const to = addDays(from, 1)
@@ -95,9 +100,7 @@ export default function DashboardPage() {
     return () => {
       active = false
     }
-  }, [selectedDay, upcoming])
-
-  const rows = selectedDay ? dayAppointments : upcoming
+  }, [selectedDay, revision])
 
   const handleCreate = async (booking: NewBooking) => {
     const count = await createBooking(booking)
@@ -107,7 +110,19 @@ export default function DashboardPage() {
       text: `${toFa(count)} جلسه با موفقیت ثبت شد.`,
     })
 
-    await refresh()
+    bumpRevision()
+  }
+
+  const handleEdit = async (id: number, input: AppointmentEdit) => {
+    await updateAppointment(id, input)
+
+    setFeedback({
+      kind: "success",
+      text: "نوبت با موفقیت ویرایش شد.",
+    })
+
+    setEditing(null)
+    bumpRevision()
   }
 
   const columns: DataTableColumn<AppointmentRow>[] = [
@@ -134,8 +149,8 @@ export default function DashboardPage() {
       cell: (row) => (
         <div className="flex flex-col">
           <span className="font-medium">{row.full_name}</span>
-          <span className="text-xs text-muted-foreground" dir="ltr">
-            {row.phone}
+          <span className="mt-2 text-muted-foreground">
+            {row.phone.length > 0 ? toFaDigits(row.phone) : "بدون شماره"}
           </span>
         </div>
       ),
@@ -143,7 +158,13 @@ export default function DashboardPage() {
     {
       key: "service",
       header: "خدمت",
-      accessor: (row) => row.service_name,
+      accessor: (row) => row.service_names.join("، "),
+      cell: (row) =>
+        row.service_names.length > 0 ? (
+          <span>{row.service_names.join("، ")}</span>
+        ) : (
+          <span className="text-muted-foreground">بدون خدمت</span>
+        ),
     },
     {
       key: "therapist",
@@ -171,6 +192,23 @@ export default function DashboardPage() {
         </span>
       ),
     },
+    {
+      key: "actions",
+      header: "عملیات",
+      sortable: false,
+      align: "start",
+      cell: (row) => (
+        <Button
+          type="button"
+          size="xs"
+          variant="ghost"
+          onClick={() => setEditing(row)}
+        >
+          <Pencil className="size-3.5" />
+          ویرایش
+        </Button>
+      ),
+    },
   ]
 
   return (
@@ -196,15 +234,15 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <DayStrip selected={selectedDay} onSelect={(date) => setSelectedDay(date)} />
+      <DayStrip selected={selectedDay} onSelect={setSelectedDay} />
 
       <DataTable
         columns={columns}
-        data={rows}
+        data={dayAppointments}
         getRowId={(row) => row.id}
         initialSort={{ key: "start", dir: "asc" }}
         searchPlaceholder="جستجوی مشتری، خدمت یا متخصص..."
-        emptyMessage="نوبت ثبت‌شده‌ای وجود ندارد."
+        emptyMessage={`برای ${formatNumericDate(selectedDay)} نوبتی ثبت نشده است.`}
         pageSize={8}
         toolbar={
           <>
@@ -212,8 +250,7 @@ export default function DashboardPage() {
               type="button"
               size="sm"
               variant="outline"
-              disabled={busy}
-              onClick={() => void handleRefresh()}
+              onClick={bumpRevision}
             >
               <RefreshCw className="size-4" />
               نوسازی
@@ -226,6 +263,20 @@ export default function DashboardPage() {
             />
           </>
         }
+      />
+
+      <EditBook
+        key={editing?.id ?? "no-edit"}
+        appointment={editing}
+        open={editing !== null}
+        onOpenChange={(value) => {
+          if (!value) {
+            setEditing(null)
+          }
+        }}
+        services={services}
+        therapists={therapists}
+        onSave={handleEdit}
       />
     </>
   )

@@ -1,10 +1,7 @@
 import { getDatabase } from "@/lib/database"
 
 export type AppointmentStatus =
-  | "scheduled"
-  | "completed"
-  | "cancelled"
-  | "no_show"
+  "scheduled" | "completed" | "cancelled" | "no_show"
 
 export type Service = {
   id: number
@@ -49,7 +46,7 @@ export type NewBooking = {
     full_name: string
     phone: string
   }
-  service_id: number
+  service_ids: number[]
   therapist_id: number | null
   appointment: {
     status: AppointmentStatus
@@ -58,14 +55,25 @@ export type NewBooking = {
   sessions: SessionRange[]
 }
 
+export type AppointmentEdit = {
+  service_ids: number[]
+  therapist_id: number | null
+  start_at: string
+  end_at: string
+  status: AppointmentStatus
+  notes: string
+}
+
 export type AppointmentRow = {
   id: number
   start_at: string
   end_at: string
   status: AppointmentStatus
-  service_name: string
+  service_ids: number[]
+  service_names: string[]
   full_name: string
   phone: string
+  notes: string | null
   therapist_id: number | null
   therapist_name: string | null
 }
@@ -88,14 +96,33 @@ export async function listServices() {
   )
 }
 
-async function findService(id: number) {
+// خدمت‌های انتخاب‌شده را به همان ترتیب ورودی برمی‌گرداند و قیمت را جمع می‌زند
+async function resolveServices(ids: number[]) {
+  const unique = [...new Set(ids.filter((id) => Number.isFinite(id)))]
+
+  if (unique.length === 0) {
+    return { services: [] as Service[], price: 0 }
+  }
+
   const db = await getDatabase()
+  const placeholders = unique.map(() => "?").join(", ")
   const rows = await db.select<Service[]>(
-    "SELECT id, name, description, duration_minutes, price, is_active FROM services WHERE id = ?",
-    [id]
+    `SELECT id, name, description, duration_minutes, price, is_active FROM services WHERE id IN (${placeholders})`,
+    unique
   )
 
-  return rows[0] ?? null
+  const services = unique
+    .map((id) => rows.find((item) => item.id === id))
+    .filter((item): item is Service => item !== undefined)
+
+  if (services.length < unique.length) {
+    throw new Error("بعضی از خدمات انتخاب‌شده در پایگاه داده پیدا نشد.")
+  }
+
+  return {
+    services,
+    price: services.reduce((sum, item) => sum + item.price, 0),
+  }
 }
 
 export async function createService(input: ServiceInput) {
@@ -147,7 +174,7 @@ export async function deleteService(id: number) {
   const db = await getDatabase()
 
   const referencing = await db.select<{ count: number }[]>(
-    "SELECT COUNT(*) AS count FROM appointments WHERE service_id = ?",
+    "SELECT COUNT(*) AS count FROM appointment_services WHERE service_id = ?",
     [id]
   )
 
@@ -246,18 +273,18 @@ export async function deleteTherapist(id: number) {
 
 /* -------------------------------- appointments ------------------------------- */
 
-async function findBusyRanges(sessions: SessionRange[]) {
+async function findBusyRanges(sessions: SessionRange[], excludeId?: number) {
   const db = await getDatabase()
-  const busy: string[] = []
+  const busy: SessionRange[] = []
 
   for (const session of sessions) {
     const rows = await db.select<{ count: number }[]>(
-      "SELECT COUNT(*) AS count FROM appointments WHERE status = 'scheduled' AND start_at < ? AND end_at > ?",
-      [session.end_at, session.start_at]
+      "SELECT COUNT(*) AS count FROM appointments WHERE status = 'scheduled' AND id != ? AND start_at < ? AND end_at > ?",
+      [excludeId ?? -1, session.end_at, session.start_at]
     )
 
     if ((rows[0]?.count ?? 0) > 0) {
-      busy.push(session.preview)
+      busy.push(session)
     }
   }
 
@@ -266,58 +293,89 @@ async function findBusyRanges(sessions: SessionRange[]) {
 
 async function resolveCustomerId(customer: NewBooking["customer"]) {
   const db = await getDatabase()
-  const rows = await db.select<{ id: number }[]>(
-    "SELECT id FROM customers WHERE phone = ? AND deleted_at IS NULL LIMIT 1",
-    [customer.phone]
-  )
+  const fullName = customer.full_name
+  const phone = customer.phone
+
+  // بدون شماره تماس، مشتری بر اساس نام فامیلی پیدا یا ادغام می‌شود
+  const rows =
+    phone.length > 0
+      ? await db.select<{ id: number }[]>(
+          "SELECT id FROM customers WHERE phone = ? AND deleted_at IS NULL LIMIT 1",
+          [phone]
+        )
+      : await db.select<{ id: number }[]>(
+          "SELECT id FROM customers WHERE (phone = '' OR phone IS NULL) AND full_name = ? AND deleted_at IS NULL LIMIT 1",
+          [fullName]
+        )
 
   if (rows.length > 0) {
-    await db.execute(
-      "UPDATE customers SET full_name = ? WHERE id = ?",
-      [customer.full_name, rows[0].id]
-    )
+    await db.execute("UPDATE customers SET full_name = ? WHERE id = ?", [
+      fullName,
+      rows[0].id,
+    ])
 
     return rows[0].id
   }
 
   const result = await db.execute(
     "INSERT INTO customers (full_name, phone) VALUES (?, ?)",
-    [customer.full_name, customer.phone]
+    [fullName, phone]
   )
 
   return Number(result.lastInsertId)
 }
 
+async function replaceAppointmentServices(
+  appointmentId: number,
+  services: Service[]
+) {
+  const db = await getDatabase()
+
+  await db.execute(
+    "DELETE FROM appointment_services WHERE appointment_id = ?",
+    [appointmentId]
+  )
+
+  for (const item of services) {
+    await db.execute(
+      "INSERT OR IGNORE INTO appointment_services (appointment_id, service_id) VALUES (?, ?)",
+      [appointmentId, item.id]
+    )
+  }
+}
+
 export async function createBooking(booking: NewBooking) {
   const db = await getDatabase()
-  const service = await findService(booking.service_id)
-
-  if (service === null) {
-    throw new Error("خدمت انتخاب‌شده در پایگاه داده پیدا نشد.")
-  }
+  const { services, price } = await resolveServices(booking.service_ids)
 
   const busy = await findBusyRanges(booking.sessions)
 
   if (busy.length > 0) {
-    throw new Error(`این وقت با نوبت دیگری تداخل دارد: ${busy.join("، ")}`)
+    throw new Error(
+      `این وقت با نوبت دیگری تداخل دارد: ${busy
+        .map((session) => session.preview)
+        .join("، ")}`
+    )
   }
 
   const customerId = await resolveCustomerId(booking.customer)
 
   for (const session of booking.sessions) {
-    await db.execute(
+    const result = await db.execute(
       "INSERT INTO appointments (customer_id, service_id, therapist_id, start_at, end_at, price, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       [
         customerId,
-        service.id,
+        services[0]?.id ?? null,
         booking.therapist_id,
         session.start_at,
         session.end_at,
-        service.price,
+        price,
         booking.appointment.status,
         booking.appointment.notes.length > 0 ? booking.appointment.notes : null,
       ]
     )
+
+    await replaceAppointmentServices(Number(result.lastInsertId), services)
   }
 
   return booking.sessions.length
@@ -327,46 +385,121 @@ const appointmentSelect = `SELECT appointments.id,
             appointments.start_at,
             appointments.end_at,
             appointments.status,
+            appointments.notes,
             appointments.therapist_id,
-            services.name AS service_name,
             customers.full_name,
             customers.phone,
             therapists.name AS therapist_name
      FROM appointments
-     INNER JOIN services ON services.id = appointments.service_id
      INNER JOIN customers ON customers.id = appointments.customer_id
      LEFT JOIN therapists ON therapists.id = appointments.therapist_id`
 
-export async function listUpcoming(limit = 200) {
-  const db = await getDatabase()
+type AppointmentBaseRow = Omit<AppointmentRow, "service_ids" | "service_names">
 
-  return db.select<AppointmentRow[]>(
-    `${appointmentSelect}
-     WHERE appointments.status = 'scheduled' AND appointments.end_at > ?
-     ORDER BY appointments.start_at
-     LIMIT ?`,
-    [new Date().toISOString(), limit]
+// خدمت‌های هر نوبت را جداگانه می‌خواند تا یک نوبت بتواند چند خدمت داشته باشد
+async function withServices(rows: AppointmentBaseRow[]) {
+  if (rows.length === 0) {
+    return [] as AppointmentRow[]
+  }
+
+  const db = await getDatabase()
+  const ids = rows.map((row) => row.id)
+  const placeholders = ids.map(() => "?").join(", ")
+  const links = await db.select<
+    {
+      appointment_id: number
+      service_id: number
+      name: string
+    }[]
+  >(
+    `SELECT appointment_services.appointment_id AS appointment_id,
+            appointment_services.service_id AS service_id,
+            services.name AS name
+     FROM appointment_services
+     INNER JOIN services ON services.id = appointment_services.service_id
+     WHERE appointment_services.appointment_id IN (${placeholders})
+     ORDER BY appointment_services.appointment_id, appointment_services.service_id`,
+    ids
   )
+
+  const grouped = new Map<number, { id: number; name: string }[]>()
+
+  for (const link of links) {
+    const list = grouped.get(link.appointment_id) ?? []
+    list.push({ id: link.service_id, name: link.name })
+    grouped.set(link.appointment_id, list)
+  }
+
+  return rows.map((row) => {
+    const services = grouped.get(row.id) ?? []
+
+    return {
+      ...row,
+      service_ids: services.map((item) => item.id),
+      service_names: services.map((item) => item.name),
+    }
+  })
+}
+
+export async function updateAppointment(id: number, input: AppointmentEdit) {
+  const db = await getDatabase()
+  const { services, price } = await resolveServices(input.service_ids)
+
+  const busy = await findBusyRanges(
+    [
+      {
+        start_at: input.start_at,
+        end_at: input.end_at,
+        preview: "",
+      },
+    ],
+    id
+  )
+
+  if (input.status === "scheduled" && busy.length > 0) {
+    throw new Error("این بازه با نوبت دیگری تداخل دارد.")
+  }
+
+  await db.execute(
+    "UPDATE appointments SET service_id = ?, therapist_id = ?, start_at = ?, end_at = ?, price = ?, status = ?, notes = ?, updated_at = ? WHERE id = ?",
+    [
+      services[0]?.id ?? null,
+      input.therapist_id,
+      input.start_at,
+      input.end_at,
+      price,
+      input.status,
+      input.notes.length > 0 ? input.notes : null,
+      new Date().toISOString(),
+      id,
+    ]
+  )
+
+  await replaceAppointmentServices(id, services)
 }
 
 export async function listForDay(from: Date, to: Date) {
   const db = await getDatabase()
 
-  return db.select<AppointmentRow[]>(
+  const rows = await db.select<AppointmentBaseRow[]>(
     `${appointmentSelect}
      WHERE appointments.start_at >= ? AND appointments.start_at < ?
      ORDER BY appointments.start_at`,
     [from.toISOString(), to.toISOString()]
   )
+
+  return withServices(rows)
 }
 
 export async function listAllAppointments(limit = 500) {
   const db = await getDatabase()
 
-  return db.select<AppointmentRow[]>(
+  const rows = await db.select<AppointmentBaseRow[]>(
     `${appointmentSelect}
      ORDER BY appointments.start_at DESC
      LIMIT ?`,
     [limit]
   )
+
+  return withServices(rows)
 }

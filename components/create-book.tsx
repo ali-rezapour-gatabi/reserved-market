@@ -19,6 +19,11 @@ import { DatePicker } from "@/components/date-picker"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { PersianNumberInput } from "@/components/persian-number-input"
+import {
+  DEFAULT_SESSION_MINUTES,
+  ServicePicker,
+  summarizeServices,
+} from "@/components/service-picker"
 import { Separator } from "@/components/ui/separator"
 import {
   Dialog,
@@ -91,7 +96,7 @@ const formatClock = (date: Date) =>
 const emptyForm = {
   fullName: "",
   phone: "",
-  serviceId: "",
+  serviceIds: [] as number[],
   therapistId: "",
   time: "",
   status: "scheduled" as AppointmentStatus,
@@ -186,7 +191,24 @@ export function CreateBook({
     value: (typeof emptyForm)[Key]
   ) => setForm((prev) => ({ ...prev, [key]: value }))
 
-  const service = services.find((item) => item.id === Number(form.serviceId))
+  const activeServices = services.filter((item) => item.is_active === 1)
+
+  const {
+    services: pickedServices,
+    durationMinutes,
+    totalPrice,
+  } = useMemo(
+    () => summarizeServices(activeServices, form.serviceIds),
+    [activeServices, form.serviceIds]
+  )
+
+  const toggleService = (id: number) =>
+    update(
+      "serviceIds",
+      form.serviceIds.includes(id)
+        ? form.serviceIds.filter((item) => item !== id)
+        : [...form.serviceIds, id]
+    )
 
   const requestedTotal = Math.min(
     Math.max(Number(form.totalSessions) || 0, 0),
@@ -204,15 +226,8 @@ export function CreateBook({
     [form.mode, form.dates, weeklySessions]
   )
 
-  const activeServices = services.filter((item) => item.is_active === 1)
-
-  // برچسب نمایشی هر گزینه؛ با پراپ items به خود Select داده می‌شود تا
-  // داخل SelectTrigger نام خدمت/متخصص نمایش داده شود، نه مقدار خام (id)
-  const serviceOptions = activeServices.map((item) => ({
-    value: String(item.id),
-    label: `${item.name} (${toFa(item.duration_minutes)} دقیقه)`,
-  }))
-
+  // برچسب نمایشی گزینه‌ها؛ با پراپ items به خود Select داده می‌شود تا
+  // داخل SelectTrigger نام متخصص نمایش داده شود، نه مقدار خام (id)
   const therapistOptions = therapists.map((item) => ({
     value: String(item.id),
     label: item.specialty ? `${item.name} — ${item.specialty}` : item.name,
@@ -227,14 +242,11 @@ export function CreateBook({
       ? Math.ceil(requestedTotal / form.weekdays.length)
       : 0
 
-  const totalPrice = service ? service.price * sessions.length : 0
-
-  // ساعت پایان بر اساس مدت خدمت
   const endTimeLabel = useMemo(() => {
-    if (!form.time || !service) return ""
+    if (!form.time) return ""
     const start = combineDateAndTime(today, form.time)
-    return formatClock(addMinutes(start, service.duration_minutes))
-  }, [form.time, service, today])
+    return formatClock(addMinutes(start, durationMinutes))
+  }, [form.time, durationMinutes, today])
 
   const resetForm = () => {
     setForm(createEmptyForm(today))
@@ -246,12 +258,8 @@ export function CreateBook({
       return "نام و نام خانوادگی مشتری را وارد کنید."
     }
 
-    if (!/^09\d{9}$/.test(form.phone.trim())) {
+    if (form.phone.trim().length > 0 && !/^09\d{9}$/.test(form.phone.trim())) {
       return "شماره موبایل باید با ۰۹ شروع شده و ۱۱ رقم باشد."
-    }
-
-    if (!service) {
-      return "خدمت مورد نظر را انتخاب کنید."
     }
 
     if (!form.time) {
@@ -293,16 +301,12 @@ export function CreateBook({
       return
     }
 
-    if (!service) {
-      return
-    }
-
     const payload: NewBooking = {
       customer: {
         full_name: form.fullName.trim(),
         phone: form.phone.trim(),
       },
-      service_id: service.id,
+      service_ids: pickedServices.map((item) => item.id),
       therapist_id: form.therapistId ? Number(form.therapistId) : null,
       appointment: {
         status: form.status,
@@ -310,7 +314,7 @@ export function CreateBook({
       },
       sessions: sessions.map((date): SessionRange => {
         const start = combineDateAndTime(date, form.time)
-        const end = addMinutes(start, service.duration_minutes)
+        const end = addMinutes(start, durationMinutes)
 
         return {
           start_at: start.toISOString(),
@@ -359,9 +363,12 @@ export function CreateBook({
 
       <DialogContent
         dir="rtl"
-        className="max-h-[92vh] w-[calc(100%-2rem)] translate-x-0 flex-col gap-0 p-0 sm:max-w-7xl"
+        className="max-h-[92vh] w-[calc(100%-2rem)] translate-x-0 flex-col gap-0 overflow-y-auto p-0 sm:max-w-7xl"
       >
-        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+        <form
+          onSubmit={handleSubmit}
+          className="flex max-h-[92vh] min-h-0 flex-1 flex-col overflow-y-auto"
+        >
           <DialogHeader className="shrink-0 flex-row items-center gap-3 p-5 text-right sm:p-6">
             <div className="flex size-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
               <CalendarDays className="size-5" />
@@ -404,9 +411,8 @@ export function CreateBook({
                     </Field>
 
                     <Field
-                      label="شماره موبایل"
+                      label="شماره موبایل (اختیاری)"
                       htmlFor="customer-phone"
-                      required
                     >
                       <div className="relative">
                         <Phone className="pointer-events-none absolute inset-y-0 right-3 my-auto size-4 text-muted-foreground" />
@@ -426,68 +432,56 @@ export function CreateBook({
                   </div>
                 </Panel>
 
-                <Panel icon={Sparkles} title="خدمت و متخصص">
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="خدمت" required>
-                      <Select
-                        items={serviceOptions}
-                        value={form.serviceId}
-                        onValueChange={(value) =>
-                          update("serviceId", value ? String(value) : "")
-                        }
-                      >
-                        <SelectTrigger className={cn(inputClass, "w-full")}>
-                          <SelectValue placeholder="انتخاب خدمت" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {serviceOptions.map((option) => (
+                <Panel
+                  icon={Sparkles}
+                  title="خدمت و متخصص"
+                  hint={
+                    pickedServices.length > 0
+                      ? `${toFa(pickedServices.length)} خدمت • مجموع ${toFa(durationMinutes)} دقیقه`
+                      : `انتخاب خدمت اجباری نیست؛ در نبود خدمت، مدت پیش‌فرض ${toFa(
+                          DEFAULT_SESSION_MINUTES
+                        )} دقیقه در نظر گرفته می‌شود.`
+                  }
+                >
+                  <Field label="خدمات ماساژ (چند انتخابی)">
+                    <ServicePicker
+                      services={activeServices}
+                      selectedIds={form.serviceIds}
+                      onToggle={toggleService}
+                      onClear={() => update("serviceIds", [])}
+                    />
+                  </Field>
+
+                  <Field label="متخصص ماساژ">
+                    <Select
+                      items={therapistOptions}
+                      value={form.therapistId}
+                      onValueChange={(value) =>
+                        update("therapistId", value ? String(value) : "")
+                      }
+                    >
+                      <SelectTrigger className={cn(inputClass, "w-full")}>
+                        <SelectValue placeholder="اختیاری" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {therapistOptions.length === 0 ? (
+                          <SelectItem value="__none__" disabled>
+                            هنوز متخصصی ثبت نشده است
+                          </SelectItem>
+                        ) : (
+                          therapistOptions.map((option) => (
                             <SelectItem key={option.value} value={option.value}>
                               {option.label}
                             </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </Field>
-
-                    <Field label="متخصص ماساژ">
-                      <Select
-                        items={therapistOptions}
-                        value={form.therapistId}
-                        onValueChange={(value) =>
-                          update("therapistId", value ? String(value) : "")
-                        }
-                      >
-                        <SelectTrigger className={cn(inputClass, "w-full")}>
-                          <SelectValue placeholder="اختیاری" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {therapistOptions.length === 0 ? (
-                            <SelectItem value="__none__" disabled>
-                              هنوز متخصصی ثبت نشده است
-                            </SelectItem>
-                          ) : (
-                            therapistOptions.map((option) => (
-                              <SelectItem
-                                key={option.value}
-                                value={option.value}
-                              >
-                                {option.label}
-                              </SelectItem>
-                            ))
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                  </div>
-
-                  {activeServices.length === 0 && (
-                    <p className="rounded-xl bg-destructive/10 p-3 text-sm text-destructive">
-                      هنوز خدمتی ثبت نشده است؛ برای فعال شدن فرم نوبت، ابتدا یک
-                      خدمت اضافه کنید.
-                    </p>
-                  )}
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </Field>
                 </Panel>
+              </div>
 
+              <div className="space-y-4 lg:space-y-5">
                 <Panel icon={Clock} title="ساعت جلسه">
                   <div className="flex flex-wrap items-stretch gap-3">
                     <div className="relative w-44">
@@ -530,7 +524,7 @@ export function CreateBook({
                         </>
                       ) : (
                         <span className="text-xs leading-6">
-                          بعد از انتخاب خدمت و ساعت، پایان جلسه اینجا نمایش داده
+                          بعد از انتخاب ساعت، ساعت پایان جلسه اینجا نمایش داده
                           می‌شود.
                         </span>
                       )}
@@ -560,9 +554,6 @@ export function CreateBook({
                     })}
                   </div>
                 </Panel>
-              </div>
-
-              <div className="space-y-4 lg:space-y-5">
                 <Panel icon={Repeat} title="روزهای جلسات">
                   <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
                     <Button
@@ -681,26 +672,17 @@ export function CreateBook({
                     className="resize-none rounded-xl bg-background"
                   />
                 </Panel>
-
-                {error && (
-                  <div
-                    role="alert"
-                    className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-                  >
-                    {error}
-                  </div>
-                )}
               </div>
             </div>
           </div>
 
           <Separator />
 
-          <DialogFooter className="shrink-0 flex-col-reverse items-stretch gap-3 bg-card p-4 sm:flex-row sm:items-center sm:justify-start sm:px-6">
+          <DialogFooter className="shrink-0 flex-col-reverse items-stretch gap-3 bg-card p-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <div className="flex gap-2">
               <Button
                 type="submit"
-                disabled={loading || activeServices.length === 0}
+                disabled={loading}
                 className="h-11 flex-1 rounded-xl px-6 sm:flex-none"
               >
                 <CalendarRange className="size-4" />
@@ -722,17 +704,25 @@ export function CreateBook({
                   </Button>
                 }
               />
+              {error && (
+                <div
+                  role="alert"
+                  className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+                >
+                  {error}
+                </div>
+              )}
             </div>
 
-            {service && sessions.length > 0 && (
+            {pickedServices.length > 0 && sessions.length > 0 && (
               <div className="flex items-center gap-3 rounded-xl bg-muted/60 px-4 py-2 sm:ms-auto">
                 <Wallet className="size-5 shrink-0 text-primary" />
                 <div className="text-xs leading-5 text-muted-foreground">
                   <div>
-                    {toFa(service.price)} تومان × {toFa(sessions.length)} جلسه
+                    {toFa(totalPrice)} تومان × {toFa(sessions.length)} جلسه
                   </div>
                   <div className="text-sm font-semibold text-foreground">
-                    مجموع: {toFa(totalPrice)} تومان
+                    مجموع: {toFa(totalPrice * sessions.length)} تومان
                   </div>
                 </div>
               </div>

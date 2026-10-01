@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils"
 import {
   formatNumericDate,
   formatNumericMonth,
+  formatTime,
   jalaliParts,
   toFa,
 } from "@/lib/jalali"
@@ -29,7 +30,7 @@ function jalaliMonthLength(monthStart: Date) {
 
 type DayStripProps = {
   selected: Date | null
-  onSelect: (date: Date | null) => void
+  onSelect: (date: Date) => void
   className?: string
 }
 
@@ -47,7 +48,6 @@ export function DayStrip({ selected, onSelect, className }: DayStripProps) {
   )
 
   const { jy, jm } = jalaliParts(monthStart)
-  const isCurrentMonth = isSameDay(monthStart, startOfJalaliMonth(today))
 
   const scrollRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -61,11 +61,10 @@ export function DayStrip({ selected, onSelect, className }: DayStripProps) {
     setMonthStart(startOfJalaliMonth(addDays(monthStart, monthLength)))
   const goPrev = () =>
     setMonthStart(startOfJalaliMonth(addDays(monthStart, -1)))
-  const goToday = () => setMonthStart(startOfJalaliMonth(today))
-
-  const scopeLabel = selected
-    ? formatNumericDate(selected)
-    : "همه نوبت‌های پیش‌رو"
+  const goToday = () => {
+    setMonthStart(startOfJalaliMonth(today))
+    onSelect(today)
+  }
 
   return (
     <section
@@ -79,16 +78,21 @@ export function DayStrip({ selected, onSelect, className }: DayStripProps) {
           <ListChecks className="size-5 text-primary" />
           <div>
             <h2 className="font-bold">نوبت‌ها</h2>
+            {selected && (
+              <p className="text-xs text-muted-foreground">
+                {formatNumericDate(selected)} — {formatTime(selected)}
+              </p>
+            )}
           </div>
         </div>
 
         <Button
           type="button"
           size="sm"
-          variant={selected === null ? "default" : "outline"}
-          onClick={() => onSelect(null)}
+          variant="outline"
+          onClick={goToday}
         >
-          نمایش پیش‌رو
+          امروز
         </Button>
       </div>
 
@@ -105,11 +109,6 @@ export function DayStrip({ selected, onSelect, className }: DayStripProps) {
 
         <div className="flex flex-1 items-center justify-center gap-2">
           <span className="font-semibold">{formatNumericMonth(jy, jm)}</span>
-          {!isCurrentMonth && (
-            <Button type="button" size="sm" variant="ghost" onClick={goToday}>
-              امروز
-            </Button>
-          )}
         </div>
 
         <Button

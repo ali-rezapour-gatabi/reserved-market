@@ -1,7 +1,13 @@
 "use client"
 
 import * as React from "react"
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react"
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -100,7 +106,9 @@ export function DataTable<TData>({
       columns.some((column) => {
         if (!column.accessor) return false
         const value = column.accessor(row)
-        return String(value ?? "").toLowerCase().includes(needle)
+        return String(value ?? "")
+          .toLowerCase()
+          .includes(needle)
       })
     )
   }, [data, columns, query])
@@ -149,7 +157,7 @@ export function DataTable<TData>({
               onChange={(event) => setQuery(event.target.value)}
               placeholder={searchPlaceholder}
               dir="rtl"
-              className="h-11 w-full max-w-xs rounded-lg border border-transparent bg-input/50 px-3 text-sm outline-none transition-[color,box-shadow,background-color] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
+              className="h-11 w-full max-w-xs rounded-lg border border-transparent bg-input/50 px-3 text-sm transition-[color,box-shadow,background-color] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
             />
           )}
           {toolbar && <div className="flex items-center gap-2">{toolbar}</div>}
@@ -166,7 +174,10 @@ export function DataTable<TData>({
                 return (
                   <TableHead
                     key={column.key}
-                    className={cn(alignClass(column.align), column.headerClassName)}
+                    className={cn(
+                      alignClass(column.align),
+                      column.headerClassName
+                    )}
                   >
                     {sortable ? (
                       <button
@@ -245,7 +256,9 @@ export function DataTable<TData>({
               type="button"
               size="icon-sm"
               variant="outline"
-              onClick={() => setPage((prev) => Math.min(totalPages - 1, prev + 1))}
+              onClick={() =>
+                setPage((prev) => Math.min(totalPages - 1, prev + 1))
+              }
               disabled={safePage >= totalPages - 1}
               aria-label="صفحه بعد"
             >
