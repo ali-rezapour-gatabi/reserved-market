@@ -13,6 +13,12 @@ pub fn run() {
             sql: include_str!("../migrations/001_initial.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 2,
+            description: "add therapists and appointment therapist_id",
+            sql: include_str!("../migrations/002_add_therapists.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

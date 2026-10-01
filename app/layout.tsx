@@ -1,6 +1,7 @@
 import { Geist_Mono } from "next/font/google"
 import "./globals.css"
 import { cn } from "@/lib/utils"
+import { DirectionProvider } from "@/components/ui/direction"
 
 const fontMono = Geist_Mono({
   subsets: ["latin"],
@@ -13,8 +14,14 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="fa" className={cn("antialiased", "font-sans", fontMono.variable)}>
-      <body>{children}</body>
+    <html
+      lang="fa"
+      dir="rtl"
+      className={cn("antialiased", "font-sans", fontMono.variable)}
+    >
+      <body>
+        <DirectionProvider direction="rtl">{children}</DirectionProvider>
+      </body>
     </html>
   )
 }
