@@ -85,6 +85,30 @@ export function addMinutes(date: Date, minutes: number) {
   return new Date(date.getTime() + minutes * 60_000)
 }
 
+export function hasTimeConflict(
+  date: Date,
+  time: string,
+  durationMinutes: number,
+  appointments: {
+    id: number
+    start_at: string
+    end_at: string
+    status: string
+  }[],
+  excludeId?: number
+) {
+  const start = combineDateAndTime(date, time).getTime()
+  const end = addMinutes(new Date(start), durationMinutes).getTime()
+
+  return appointments.some(
+    (appointment) =>
+      appointment.id !== excludeId &&
+      appointment.status === "scheduled" &&
+      start < new Date(appointment.end_at).getTime() &&
+      end > new Date(appointment.start_at).getTime()
+  )
+}
+
 export function generateWeeklySessions(
   startDate: Date | null | undefined,
   weekdays: number[],

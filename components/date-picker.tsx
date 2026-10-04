@@ -135,7 +135,7 @@ export function DatePicker({
           {value.map((date) => (
             <span
               key={date.toISOString()}
-              className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 py-1 ps-3 pe-2 text-xs text-primary"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 py-1 ps-3 pe-2 text-xs text-primary"
             >
               {formatSession(date)}
               <button

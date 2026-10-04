@@ -43,7 +43,7 @@ export function ServicePicker({
 }: ServicePickerProps) {
   if (services.length === 0) {
     return (
-      <p className="rounded-xl border border-dashed p-3 text-sm text-muted-foreground">
+      <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
         هنوز خدمتی ثبت نشده است؛ نوبت بدون خدمت و با مدت پیش‌فرض ثبت می‌شود.
       </p>
     )
@@ -51,7 +51,7 @@ export function ServicePicker({
 
   return (
     <div className="space-y-2">
-      <div className="max-h-100 overflow-y-auto rounded-xl border bg-background p-1.5">
+      <div className="max-h-100 overflow-y-auto rounded-lg border bg-background p-1.5">
         <div className="grid gap-1.5 sm:grid-cols-2">
           {services.map((item) => {
             const active = selectedIds.includes(item.id)
@@ -72,7 +72,7 @@ export function ServicePicker({
               >
                 <span
                   className={cn(
-                    "flex size-5 shrink-0 items-center justify-center rounded-md border",
+                    "flex size-5 shrink-0 items-center justify-center rounded-lg border",
                     active
                       ? "border-primary bg-primary text-primary-foreground"
                       : "bg-background"

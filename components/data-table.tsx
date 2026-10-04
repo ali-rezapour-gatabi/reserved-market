@@ -44,6 +44,8 @@ type DataTableProps<TData> = {
   pageSize?: number
   enableSearch?: boolean
   toolbar?: React.ReactNode
+  onRowClick?: (row: TData) => void
+  getRowClassName?: (row: TData) => string | undefined
 }
 
 function alignClass(align?: "start" | "center" | "end") {
@@ -77,6 +79,8 @@ export function DataTable<TData>({
   pageSize = 10,
   enableSearch = true,
   toolbar,
+  onRowClick,
+  getRowClassName,
 }: DataTableProps<TData>) {
   const [sortKey, setSortKey] = React.useState<string | null>(
     initialSort?.key ?? null
@@ -134,6 +138,8 @@ export function DataTable<TData>({
   const paged = sorted.slice(start, start + pageSize)
 
   const handleSort = (key: string) => {
+    setPage(0)
+
     if (sortKey === key) {
       setSortDir((prev) => (prev === "asc" ? "desc" : "asc"))
       return
@@ -143,10 +149,6 @@ export function DataTable<TData>({
     setSortDir("asc")
   }
 
-  React.useEffect(() => {
-    setPage(0)
-  }, [query, sortKey, sortDir, data.length])
-
   return (
     <div className="space-y-4">
       {(enableSearch || toolbar) && (
@@ -154,7 +156,10 @@ export function DataTable<TData>({
           {enableSearch && (
             <input
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => {
+                setPage(0)
+                setQuery(event.target.value)
+              }}
               placeholder={searchPlaceholder}
               dir="rtl"
               className="h-11 w-full max-w-xs rounded-lg border border-transparent bg-input/50 px-3 text-sm transition-[color,box-shadow,background-color] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
@@ -164,7 +169,7 @@ export function DataTable<TData>({
         </div>
       )}
 
-      <div className="rounded-2xl border bg-card shadow-sm">
+      <div className="rounded-lg border bg-card shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
@@ -214,7 +219,26 @@ export function DataTable<TData>({
               </TableRow>
             ) : (
               paged.map((row, index) => (
-                <TableRow key={getRowId(row, start + index)}>
+                <TableRow
+                  key={getRowId(row, start + index)}
+                  onClick={onRowClick ? () => onRowClick(row) : undefined}
+                  onKeyDown={
+                    onRowClick
+                      ? (event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault()
+                            onRowClick(row)
+                          }
+                        }
+                      : undefined
+                  }
+                  tabIndex={onRowClick ? 0 : undefined}
+                  className={cn(
+                    onRowClick &&
+                      "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    getRowClassName?.(row)
+                  )}
+                >
                   {columns.map((column) => (
                     <TableCell
                       key={column.key}

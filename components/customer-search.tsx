@@ -162,7 +162,7 @@ export function CustomerSearch({
         placeholder={placeholder}
         maxLength={150}
         autoComplete="off"
-        className={cn("h-12 w-full text-lg", className)}
+        className={cn("h-12 w-full", className)}
         inputClassName={cn("text-start", inputClassName)}
         onFocus={() => setOpen(true)}
       >
@@ -171,21 +171,26 @@ export function CustomerSearch({
         </InputGroupAddon>
       </ComboboxInput>
 
-      <ComboboxContent side="bottom" align="start" sideOffset={6}>
+      <ComboboxContent
+        side="bottom"
+        align="start"
+        sideOffset={6}
+        className="rounded-lg"
+      >
         <ComboboxList>
           {(option: CustomerOption) => (
             <ComboboxItem
               key={`${option.id}-${option.full_name}`}
               value={option}
-              className="items-start"
+              className="items-start rounded-lg"
             >
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="truncate">
+                <span className="truncate text-[12px]">
                   {option.isNew
                     ? `ثبت «${option.full_name}» به‌عنوان مشتری جدید`
                     : option.full_name}
                 </span>
-                <span className="text-xs font-normal text-muted-foreground">
+                <span className="mt-2 text-[10px] font-normal text-primary">
                   {option.isNew
                     ? "با ثبت نوبت، این مشتری ساخته می‌شود"
                     : option.phone.length > 0

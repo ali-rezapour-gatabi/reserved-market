@@ -9,7 +9,7 @@ const Header: React.FC = () => {
   const persianDate = `${weekdayName(now)} ${formatNumericDate(now)}`
 
   return (
-    <header className="sticky top-0 flex w-full items-center justify-between rounded-xl bg-secondary p-4 pt-5">
+    <header className="sticky top-0 flex w-full items-center justify-between rounded-lg bg-secondary p-4 pt-5">
       <h1 className="text-xl font-bold">اطلس ماساژ</h1>
       <h3 className="text-xl font-bold" dir="rtl">
         {persianDate}

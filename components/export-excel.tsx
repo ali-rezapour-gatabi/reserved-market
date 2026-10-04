@@ -151,7 +151,7 @@ export function ExportExcelButton() {
         className="w-[calc(100%-2rem)] translate-x-0 gap-0 p-0 sm:max-w-lg"
       >
         <DialogHeader className="shrink-0 flex-row items-center gap-3 p-5 text-right">
-          <div className="flex size-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
+          <div className="flex size-11 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <FileSpreadsheet className="size-5" />
           </div>
           <div className="space-y-0.5">
@@ -201,7 +201,7 @@ export function ExportExcelButton() {
             </div>
           </div>
 
-          <div className="flex items-start gap-3 rounded-xl bg-card p-3">
+          <div className="flex items-start gap-3 rounded-lg bg-card p-3">
             <CalendarRange className="mt-0.5 size-4 shrink-0 text-primary" />
             <div className="text-xs leading-6">
               <div className="font-medium text-foreground">ستون‌های خروجی</div>
@@ -215,7 +215,7 @@ export function ExportExcelButton() {
           {error && (
             <div
               role="alert"
-              className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+              className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
             >
               {error}
             </div>
@@ -227,7 +227,7 @@ export function ExportExcelButton() {
             type="button"
             disabled={loading}
             onClick={handleExport}
-            className="h-11 flex-1 rounded-xl px-6 sm:flex-none"
+            className="h-11 flex-1 rounded-lg px-6 sm:flex-none"
           >
             {loading ? (
               <Loader2 className="size-4 animate-spin" />
@@ -243,7 +243,7 @@ export function ExportExcelButton() {
                 type="button"
                 variant="outline"
                 disabled={loading}
-                className="h-11 rounded-xl"
+                className="h-11 rounded-lg"
               >
                 انصراف
               </Button>

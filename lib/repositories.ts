@@ -12,6 +12,12 @@ export type Customer = {
   updated_at: string
 }
 
+export type CustomerListRow = Customer & {
+  total_sessions: number
+  completed_sessions: number
+  last_session_at: string | null
+}
+
 export type Service = {
   id: number
   name: string
@@ -60,6 +66,7 @@ export type NewBooking = {
   appointment: {
     status: AppointmentStatus
     notes: string
+    referral?: string
   }
   sessions: SessionRange[]
 }
@@ -71,20 +78,25 @@ export type AppointmentEdit = {
   end_at: string
   status: AppointmentStatus
   notes: string
+  referral?: string
 }
 
 export type AppointmentRow = {
   id: number
+  slug: string | null
   start_at: string
   end_at: string
+  price: number
   status: AppointmentStatus
   service_ids: number[]
   service_names: string[]
   full_name: string
   phone: string
   notes: string | null
+  referral?: string | null
   therapist_id: number | null
   therapist_name: string | null
+  remaining?: number
 }
 
 
@@ -296,6 +308,26 @@ export async function listCustomers(limit = 20) {
   )
 }
 
+export async function listAllCustomers() {
+  const db = await getDatabase()
+
+  return db.select<CustomerListRow[]>(
+    `SELECT customers.id,
+            customers.full_name,
+            customers.phone,
+            customers.notes,
+            customers.updated_at,
+            COUNT(appointments.id) AS total_sessions,
+            COALESCE(SUM(CASE WHEN appointments.status = 'completed' THEN 1 ELSE 0 END), 0) AS completed_sessions,
+            MAX(appointments.start_at) AS last_session_at
+     FROM customers
+     LEFT JOIN appointments ON appointments.customer_id = customers.id
+     WHERE customers.deleted_at IS NULL
+     GROUP BY customers.id
+     ORDER BY customers.updated_at DESC`
+  )
+}
+
 export async function searchCustomers(query: string, limit = 8) {
   const needle = normalizeCustomerQuery(query)
 
@@ -349,13 +381,13 @@ async function resolveCustomerId(customer: NewBooking["customer"]) {
   const rows =
     phone.length > 0
       ? await db.select<{ id: number }[]>(
-          "SELECT id FROM customers WHERE phone = ? AND deleted_at IS NULL LIMIT 1",
-          [phone]
-        )
+        "SELECT id FROM customers WHERE phone = ? AND deleted_at IS NULL LIMIT 1",
+        [phone]
+      )
       : await db.select<{ id: number }[]>(
-          "SELECT id FROM customers WHERE (phone = '' OR phone IS NULL) AND full_name = ? AND deleted_at IS NULL LIMIT 1",
-          [fullName]
-        )
+        "SELECT id FROM customers WHERE (phone = '' OR phone IS NULL) AND full_name = ? AND deleted_at IS NULL LIMIT 1",
+        [fullName]
+      )
 
   if (rows.length > 0) {
     await db.execute("UPDATE customers SET full_name = ? WHERE id = ?", [
@@ -408,10 +440,11 @@ export async function createBooking(booking: NewBooking) {
   }
 
   const customerId = await resolveCustomerId(booking.customer)
+  const slug = `${customerId}-${Date.now()}-${Math.floor(Math.random() * 10000)}`
 
   for (const session of booking.sessions) {
     const result = await db.execute(
-      "INSERT INTO appointments (customer_id, service_id, therapist_id, start_at, end_at, price, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO appointments (customer_id, service_id, therapist_id, start_at, end_at, price, status, notes, referral , slug) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ? , ?)",
       [
         customerId,
         services[0]?.id ?? null,
@@ -421,6 +454,8 @@ export async function createBooking(booking: NewBooking) {
         price,
         booking.appointment.status,
         booking.appointment.notes.length > 0 ? booking.appointment.notes : null,
+        booking.appointment.referral || null,
+        slug
       ]
     )
 
@@ -431,11 +466,14 @@ export async function createBooking(booking: NewBooking) {
 }
 
 const appointmentSelect = `SELECT appointments.id,
+            appointments.slug,
             appointments.start_at,
             appointments.end_at,
+            appointments.price,
             appointments.status,
             appointments.notes,
             appointments.therapist_id,
+            appointments.referral,
             customers.full_name,
             customers.phone,
             therapists.name AS therapist_name
@@ -509,9 +547,10 @@ export async function updateAppointment(id: number, input: AppointmentEdit) {
   }
 
   await db.execute(
-    "UPDATE appointments SET service_id = ?, therapist_id = ?, start_at = ?, end_at = ?, price = ?, status = ?, notes = ?, updated_at = ? WHERE id = ?",
+    "UPDATE appointments SET service_id = ? , referral = ?, therapist_id = ?, start_at = ?, end_at = ?, price = ?, status = ?, notes = ?, updated_at = ? WHERE id = ?",
     [
       services[0]?.id ?? null,
+      input.referral || null,
       input.therapist_id,
       input.start_at,
       input.end_at,
@@ -534,6 +573,32 @@ export async function listForRange(from: Date, to: Date) {
      WHERE appointments.start_at >= ? AND appointments.start_at < ?
      ORDER BY appointments.start_at`,
     [from.toISOString(), to.toISOString()]
+  )
+
+  return withServices(rows)
+}
+
+export async function listBookingSessions(slug: string) {
+  const db = await getDatabase()
+
+  const rows = await db.select<AppointmentBaseRow[]>(
+    `${appointmentSelect}
+     WHERE appointments.slug = ?
+     ORDER BY appointments.start_at, appointments.id`,
+    [slug]
+  )
+
+  return withServices(rows)
+}
+
+export async function listCustomerAppointments(customerId: number) {
+  const db = await getDatabase()
+
+  const rows = await db.select<AppointmentBaseRow[]>(
+    `${appointmentSelect}
+     WHERE customers.id = ?
+     ORDER BY appointments.start_at, appointments.id`,
+    [customerId]
   )
 
   return withServices(rows)
@@ -562,6 +627,16 @@ export async function setAppointmentStatus(
     "UPDATE appointments SET status = ?, updated_at = ? WHERE id = ?",
     [status, new Date().toISOString(), id]
   )
+}
+
+export async function deleteAppointment(id: number) {
+  const db = await getDatabase()
+
+  await db.execute(
+    "DELETE FROM appointment_services WHERE appointment_id = ?",
+    [id]
+  )
+  await db.execute("DELETE FROM appointments WHERE id = ?", [id])
 }
 
 export async function completeDayAppointments(from: Date, to: Date) {

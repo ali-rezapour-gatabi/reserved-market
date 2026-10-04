@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { CalendarClock, Sparkles, Users } from "lucide-react"
+import { CalendarClock, ContactRound, Sparkles, Users } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
@@ -18,6 +18,11 @@ const NAV_ITEMS = [
     icon: Sparkles,
   },
   {
+    href: "/customers",
+    label: "مشتریان",
+    icon: ContactRound,
+  },
+  {
     href: "/therapists",
     label: "متخصص‌ها",
     icon: Users,
@@ -30,7 +35,7 @@ export function AppSidebar({ className }: { className?: string }) {
   return (
     <aside
       className={cn(
-        "flex w-full shrink-0 flex-col gap-2 rounded-2xl bg-card p-3 text-card-foreground shadow-sm lg:w-64",
+        "flex w-full shrink-0 flex-col gap-2 rounded-lg bg-card p-3 text-card-foreground shadow-sm lg:w-64",
         className
       )}
     >
@@ -49,7 +54,7 @@ export function AppSidebar({ className }: { className?: string }) {
               href={item.href}
               aria-current={isActive ? "page" : undefined}
               className={cn(
-                "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors outline-none",
+                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors outline-none",
                 "focus-visible:ring-2 focus-visible:ring-ring",
                 isActive
                   ? "bg-primary font-medium text-primary-foreground"

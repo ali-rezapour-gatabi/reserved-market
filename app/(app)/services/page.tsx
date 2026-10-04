@@ -120,8 +120,8 @@ export default function ServicesPage() {
         <span
           className={
             row.is_active === 1
-              ? "rounded-full bg-primary/10 px-2.5 py-0.5 text-xs text-primary"
-              : "rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground"
+              ? "rounded-lg bg-primary/10 px-2.5 py-0.5 text-xs text-primary"
+              : "rounded-lg bg-muted px-2.5 py-0.5 text-xs text-muted-foreground"
           }
         >
           {row.is_active === 1 ? "فعال" : "غیرفعال"}
@@ -173,7 +173,7 @@ export default function ServicesPage() {
 
   return (
     <>
-      <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-card p-4 text-card-foreground shadow-sm">
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-card p-4 text-card-foreground shadow-sm">
         <div>
           <h2 className="font-semibold">سرویس‌ها</h2>
         </div>
@@ -189,8 +189,8 @@ export default function ServicesPage() {
           role={feedback.kind === "error" ? "alert" : "status"}
           className={
             feedback.kind === "error"
-              ? "flex items-center justify-between gap-3 rounded-2xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-              : "flex items-center justify-between gap-3 rounded-2xl border border-primary/30 bg-primary/10 p-3 text-sm text-primary"
+              ? "flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+              : "flex items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/10 p-3 text-sm text-primary"
           }
         >
           <span>{feedback.text}</span>

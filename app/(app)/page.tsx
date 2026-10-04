@@ -2,7 +2,15 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { addDays, startOfDay } from "date-fns"
-import { CalendarPlus, Check, Pencil, RefreshCw, Undo2 } from "lucide-react"
+import {
+  CalendarPlus,
+  Check,
+  Eye,
+  Pencil,
+  RefreshCw,
+  Trash2,
+  Undo2,
+} from "lucide-react"
 
 import { DayStrip } from "@/components/day-strip"
 import { CreateBook, type CreateBookPrefill } from "@/components/create-book"
@@ -10,6 +18,12 @@ import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { EditBook } from "@/components/edit-book"
 import { ExportExcelButton } from "@/components/export-excel"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { toFa, toFaDigits } from "@/lib/jalali"
 import { formatNumericDate, formatNumericDateTime } from "@/lib/jalali"
 import {
@@ -20,6 +34,8 @@ import {
 import {
   completeDayAppointments,
   createBooking,
+  deleteAppointment,
+  listBookingSessions,
   listForRange,
   listServices,
   listTherapists,
@@ -45,10 +61,14 @@ const STATUS_STYLES: Record<string, string> = {
 }
 
 export default function DashboardPage() {
+  const [currentTime, setCurrentTime] = useState(() => Date.now())
   const [services, setServices] = useState<Service[]>([])
   const [therapists, setTherapists] = useState<Therapist[]>([])
   const [selectedDay, setSelectedDay] = useState<Date>(() => startOfToday())
   const [dayAppointments, setDayAppointments] = useState<AppointmentRow[]>([])
+  const [viewing, setViewing] = useState<AppointmentRow | null>(null)
+  const [viewingSessions, setViewingSessions] = useState<AppointmentRow[]>([])
+  const [viewingSessionsLoading, setViewingSessionsLoading] = useState(false)
   const [editing, setEditing] = useState<AppointmentRow | null>(null)
   const [repeatSource, setRepeatSource] = useState<AppointmentRow | null>(null)
   const [feedback, setFeedback] = useState<Feedback | null>(null)
@@ -56,6 +76,14 @@ export default function DashboardPage() {
 
   const bumpRevision = useCallback(() => {
     setRevision((prev) => prev + 1)
+  }, [])
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setCurrentTime(Date.now())
+    }, 15_000)
+
+    return () => window.clearInterval(interval)
   }, [])
 
   useEffect(() => {
@@ -104,6 +132,32 @@ export default function DashboardPage() {
     }
   }, [selectedDay, revision])
 
+  useEffect(() => {
+    if (!viewing) return
+
+    let active = true
+
+    const loadSessions = async () => {
+      try {
+        const sessions = viewing.slug
+          ? await listBookingSessions(viewing.slug)
+          : [viewing]
+
+        if (active) setViewingSessions(sessions)
+      } catch {
+        if (active) setViewingSessions([viewing])
+      } finally {
+        if (active) setViewingSessionsLoading(false)
+      }
+    }
+
+    loadSessions()
+
+    return () => {
+      active = false
+    }
+  }, [viewing])
+
   const handleCreate = async (booking: NewBooking) => {
     const count = await createBooking(booking)
 
@@ -136,6 +190,11 @@ export default function DashboardPage() {
   ).length
 
   const dayDone = pendingCount === 0 && doneCount > 0
+
+  const isAppointmentInProgress = (row: AppointmentRow) =>
+    row.status === "scheduled" &&
+    currentTime >= new Date(row.start_at).getTime() &&
+    currentTime < new Date(row.end_at).getTime()
 
   const handleToggleDayDone = async () => {
     const from = startOfDay(selectedDay)
@@ -189,7 +248,39 @@ export default function DashboardPage() {
       setFeedback({
         kind: "error",
         text:
-          error instanceof Error ? error.message : "تغییر وضعیت نوبت با خطا مواجه شد.",
+          error instanceof Error
+            ? error.message
+            : "تغییر وضعیت نوبت با خطا مواجه شد.",
+      })
+    }
+  }
+
+  const handleDeleteAppointment = async (row: AppointmentRow) => {
+    const start = formatNumericDateTime(new Date(row.start_at))
+    if (
+      !window.confirm(
+        `نوبت ${row.full_name} در ${start} حذف شود؟ فقط همین جلسه حذف می‌شود.`
+      )
+    ) {
+      return
+    }
+
+    try {
+      await deleteAppointment(row.id)
+      setDayAppointments((current) =>
+        current.filter((appointment) => appointment.id !== row.id)
+      )
+      if (viewing?.id === row.id) {
+        setViewing(null)
+        setViewingSessions([])
+      }
+      setFeedback({ kind: "success", text: "نوبت حذف شد." })
+      bumpRevision()
+    } catch (error) {
+      setFeedback({
+        kind: "error",
+        text:
+          error instanceof Error ? error.message : "حذف نوبت ناموفق بود.",
       })
     }
   }
@@ -272,11 +363,16 @@ export default function DashboardPage() {
       cell: (row) => (
         <span
           className={
-            "rounded-full px-2.5 py-0.5 text-xs " +
-            (STATUS_STYLES[row.status] ?? "bg-muted text-muted-foreground")
+            "rounded-lg px-2.5 py-0.5 text-xs " +
+            (isAppointmentInProgress(row)
+              ? "bg-primary text-primary-foreground"
+              : (STATUS_STYLES[row.status] ??
+                "bg-muted text-muted-foreground"))
           }
         >
-          {APPOINTMENT_STATUS_LABELS[row.status] ?? row.status}
+          {isAppointmentInProgress(row)
+            ? "در حال انجام"
+            : (APPOINTMENT_STATUS_LABELS[row.status] ?? row.status)}
         </span>
       ),
     },
@@ -318,6 +414,22 @@ export default function DashboardPage() {
               type="button"
               size="xs"
               variant="ghost"
+              onClick={() => {
+                setViewingSessions([])
+                setViewingSessionsLoading(true)
+                setViewing(row)
+              }}
+              aria-label={`مشاهده جزئیات نوبت ${row.full_name}`}
+              title="مشاهده جزئیات نوبت"
+            >
+              <Eye className="size-3.5" />
+              جزئیات
+            </Button>
+
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
               onClick={() => setRepeatSource(row)}
             >
               <CalendarPlus className="size-3.5" />
@@ -333,6 +445,17 @@ export default function DashboardPage() {
               <Pencil className="size-3.5" />
               ویرایش
             </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              onClick={() => void handleDeleteAppointment(row)}
+              aria-label={`حذف نوبت ${row.full_name}`}
+              title="حذف همین نوبت"
+            >
+              <Trash2 className="size-3.5 text-destructive" />
+              حذف
+            </Button>
           </div>
         )
       },
@@ -346,8 +469,8 @@ export default function DashboardPage() {
           role={feedback.kind === "error" ? "alert" : "status"}
           className={
             feedback.kind === "error"
-              ? "flex items-center justify-between gap-3 rounded-2xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-              : "flex items-center justify-between gap-3 rounded-2xl border border-primary/30 bg-primary/10 p-3 text-sm text-primary"
+              ? "flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+              : "flex items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/10 p-3 text-sm text-primary"
           }
         >
           <span>{feedback.text}</span>
@@ -372,6 +495,11 @@ export default function DashboardPage() {
         searchPlaceholder="جستجوی مشتری، خدمت یا متخصص..."
         emptyMessage={`برای ${formatNumericDate(selectedDay)} نوبتی ثبت نشده است.`}
         pageSize={8}
+        getRowClassName={(row) =>
+          isAppointmentInProgress(row)
+            ? "bg-primary/5 hover:bg-primary/10"
+            : undefined
+        }
         toolbar={
           <>
             <Button
@@ -414,6 +542,115 @@ export default function DashboardPage() {
           </>
         }
       />
+
+      <Dialog
+        open={viewing !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setViewing(null)
+            setViewingSessions([])
+            setViewingSessionsLoading(false)
+          }
+        }}
+      >
+        <DialogContent dir="rtl" className="sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold">جزئیات نوبت</DialogTitle>
+          </DialogHeader>
+          {viewing && (
+            <dl className="grid gap-3 sm:grid-cols-3">
+              {(
+                [
+                  ["مشتری", viewing.full_name],
+                  [
+                    "شماره تماس",
+                    viewing.phone.length > 0
+                      ? toFaDigits(viewing.phone)
+                      : "بدون شماره",
+                  ],
+                  ["شروع", formatNumericDateTime(new Date(viewing.start_at))],
+                  ["پایان", formatNumericDateTime(new Date(viewing.end_at))],
+                  [
+                    "خدمات",
+                    viewing.service_names.length > 0
+                      ? viewing.service_names.join("، ")
+                      : "بدون خدمت",
+                  ],
+                  ["متخصص", viewing.therapist_name ?? "—"],
+                  [
+                    "وضعیت",
+                    APPOINTMENT_STATUS_LABELS[viewing.status] ?? viewing.status,
+                  ],
+                  [
+                    "شماره جلسه",
+                    viewingSessionsLoading
+                      ? "در حال دریافت..."
+                      : `${toFa(
+                          Math.max(
+                            1,
+                            viewingSessions.findIndex(
+                              (session) => session.id === viewing.id
+                            ) + 1
+                          )
+                        )} از ${toFa(Math.max(1, viewingSessions.length))}`,
+                  ],
+                  ["هزینه", `${toFa(viewing.price)} تومان`],
+                  ["معرفی از", viewing.referral || "—"],
+                  ["یادداشت", viewing.notes || "—"],
+                ] as [string, string][]
+              ).map(([label, value]) => (
+                <div key={label} className="min-w-0 rounded-lg bg-muted p-3">
+                  <dt className="text-[12px] text-muted-foreground">{label}</dt>
+                  <dd className="mt-1 text-[12px] font-medium wrap-break-word">
+                    {value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          <section className="space-y-2">
+            <h3 className="text-sm font-semibold">تمام جلسات این رزرو</h3>
+            {viewingSessionsLoading ? (
+              <p className="text-sm text-muted-foreground">
+                در حال دریافت جلسات...
+              </p>
+            ) : viewingSessions.length > 0 ? (
+              <ol className="max-h-120 space-y-2 overflow-y-auto">
+                {viewingSessions.map((session, index) => (
+                  <li
+                    key={session.id}
+                    className={
+                      "flex items-center justify-between gap-3 rounded-lg border p-3 text-sm " +
+                      (session.id === viewing?.id
+                        ? "border-primary/40 bg-primary/5"
+                        : "")
+                    }
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium">
+                        جلسه {toFa(index + 1)}:{" "}
+                        {session.service_names.join("، ") || "بدون خدمت"}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {formatNumericDateTime(new Date(session.start_at))} تا{" "}
+                        {formatNumericDateTime(new Date(session.end_at))}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {APPOINTMENT_STATUS_LABELS[session.status] ??
+                        session.status}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                جلسه‌ای برای این رزرو پیدا نشد.
+              </p>
+            )}
+          </section>
+        </DialogContent>
+      </Dialog>
 
       <CreateBook
         key={repeatSource?.id ?? "no-repeat"}

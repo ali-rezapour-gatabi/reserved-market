@@ -10,6 +10,7 @@
     "beforeBuildCommand": "bun run build"
   },
   "app": {
+    "appDirectoriesOverride": "./atlas-massage",
     "windows": [
       {
         "title": "Atlas Massage",
@@ -27,7 +28,9 @@
   },
   "plugins": {
     "sql": {
-      "preload": ["sqlite:massage.db"]
+      "preload": [
+        "sqlite:massage.db"
+      ]
     }
   },
   "bundle": {

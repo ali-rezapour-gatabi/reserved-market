@@ -1,7 +1,7 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { isSameDay, startOfDay } from "date-fns"
+import { useEffect, useMemo, useState } from "react"
+import { addDays, isSameDay, startOfDay } from "date-fns"
 import {
   CalendarDays,
   Clock,
@@ -44,8 +44,10 @@ import {
   APPOINTMENT_STATUS_LABELS,
   addMinutes,
   combineDateAndTime,
+  hasTimeConflict,
   startOfToday,
 } from "@/lib/schedule"
+import { listForRange } from "@/lib/repositories"
 import type {
   AppointmentEdit,
   AppointmentRow,
@@ -71,7 +73,7 @@ export const QUICK_TIMES = [
   "21:00",
   "22:30",
 ]
-const inputClass = "h-11 rounded-xl bg-background"
+const inputClass = "h-11 rounded-lg bg-background"
 
 function pad2(value: number) {
   return String(value).padStart(2, "0")
@@ -146,9 +148,9 @@ function Panel({
   children: React.ReactNode
 }) {
   return (
-    <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
+    <section className="space-y-4 rounded-lg border bg-card p-4 sm:p-5">
       <header className="flex items-center gap-3">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <Icon className="size-4" />
         </span>
         <div className="min-w-0">
@@ -195,8 +197,28 @@ export function EditBook({
   )
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [appointmentsOnDate, setAppointmentsOnDate] = useState<AppointmentRow[]>([])
 
   const today = startOfToday()
+
+  useEffect(() => {
+    if (!open || !form?.date) return
+
+    let active = true
+    const from = startOfDay(form.date)
+
+    listForRange(from, addDays(from, 1))
+      .then((rows) => {
+        if (active) setAppointmentsOnDate(rows)
+      })
+      .catch(() => {
+        if (active) setAppointmentsOnDate([])
+      })
+
+    return () => {
+      active = false
+    }
+  }, [open, form?.date])
 
   const update = <Key extends keyof EditForm>(key: Key, value: EditForm[Key]) =>
     setForm((prev) => (prev === null ? prev : { ...prev, [key]: value }))
@@ -229,6 +251,18 @@ export function EditBook({
 
     return toFaDigits(`${pad2(end.getHours())}:${pad2(end.getMinutes())}`)
   })()
+
+  const selectedTimeHasConflict = Boolean(
+    form?.date &&
+      form.time &&
+      hasTimeConflict(
+        form.date,
+        form.time,
+        summary.durationMinutes,
+        appointmentsOnDate,
+        appointment?.id
+      )
+  )
 
   const dirty =
     appointment !== null && form !== null
@@ -319,7 +353,7 @@ export function EditBook({
           >
             <DialogHeader className="shrink-0 flex-col gap-4 p-3 text-right sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
-                <div className="flex size-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
+                <div className="flex size-11 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                   <CalendarDays className="size-5" />
                 </div>
                 <div className="space-y-0.5">
@@ -330,10 +364,10 @@ export function EditBook({
               </div>
 
               <div
-                className="ml-10 flex items-center gap-3 rounded-xl border bg-muted/40 py-2 pr-2 pl-4"
+                className="ml-10 flex items-center gap-3 rounded-lg border bg-muted/40 py-2 pr-2 pl-4"
                 title="نام و شماره تماس مشتری در این مرحله قابل تغییر نیست."
               >
-                <span className="flex size-9 items-center justify-center rounded-full bg-primary/15 text-sm font-semibold text-primary">
+                <span className="flex size-9 items-center justify-center rounded-lg bg-primary/15 text-sm font-semibold text-primary">
                   {appointment.full_name.trim().charAt(0)}
                 </span>
                 <div className="leading-5">
@@ -386,8 +420,10 @@ export function EditBook({
                               update("time", event.target.value)
                             }
                             aria-label="ساعت شروع"
+                            aria-invalid={selectedTimeHasConflict}
                             className={cn(
-                              "h-14 rounded-xl bg-background pr-11 pl-3 text-center text-2xl font-semibold tracking-wider tabular-nums",
+                              "h-14 rounded-lg bg-background pr-11 pl-3 text-center text-2xl font-semibold tracking-wider tabular-nums",
+                              selectedTimeHasConflict && "border-destructive",
                               "focus-visible:border-primary",
                               !form.time && "text-muted-foreground",
                               "[&::-webkit-calendar-picker-indicator]:absolute",
@@ -403,7 +439,7 @@ export function EditBook({
 
                         <div
                           className={cn(
-                            "flex min-w-32 flex-1 flex-col justify-center rounded-xl px-4 text-sm",
+                            "flex min-w-32 flex-1 flex-col justify-center rounded-lg px-4 text-sm",
                             endTimeLabel
                               ? "bg-primary/10 text-primary"
                               : "border border-dashed text-muted-foreground"
@@ -430,18 +466,34 @@ export function EditBook({
                       <div className="flex flex-wrap gap-2">
                         {QUICK_TIMES.map((time) => {
                           const active = form.time === time
+                          const busy = Boolean(
+                            form.date &&
+                              hasTimeConflict(
+                                form.date,
+                                time,
+                                summary.durationMinutes,
+                                appointmentsOnDate,
+                                appointment?.id
+                              )
+                          )
                           return (
                             <button
                               key={time}
                               type="button"
                               aria-pressed={active}
+                              aria-label={`${toFaDigits(time)}${busy ? "، تداخل با نوبت رزروشده" : ""}`}
+                              title={busy ? "با یک نوبت زمان‌بندی‌شده تداخل دارد" : undefined}
                               onClick={() => update("time", time)}
                               className={cn(
-                                "rounded-full border px-3.5 py-1.5 text-sm tabular-nums transition-colors outline-none",
+                                "rounded-lg border px-3.5 py-1.5 text-sm tabular-nums transition-colors outline-none",
                                 "focus-visible:ring-2 focus-visible:ring-ring",
-                                active
-                                  ? "border-transparent bg-primary font-medium text-primary-foreground"
-                                  : "bg-background hover:bg-muted"
+                                busy
+                                  ? active
+                                    ? "border-destructive bg-destructive font-medium text-destructive-foreground"
+                                    : "border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/15"
+                                  : active
+                                    ? "border-transparent bg-primary font-medium text-primary-foreground"
+                                    : "bg-background hover:bg-muted"
                               )}
                             >
                               {toFaDigits(time)}
@@ -449,10 +501,19 @@ export function EditBook({
                           )
                         })}
                       </div>
+                      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span className="size-2 rounded-full bg-destructive" />
+                        قرمز: این ساعت با نوبت زمان‌بندی‌شدهٔ دیگری تداخل دارد.
+                      </p>
+                      {selectedTimeHasConflict && form.status === "scheduled" && (
+                        <p role="alert" className="text-xs text-destructive">
+                          ساعت انتخاب‌شده با نوبت دیگری تداخل دارد.
+                        </p>
+                      )}
                     </Panel>
 
                     {timeChanged && (
-                      <p className="flex items-center gap-2 rounded-xl bg-muted/60 p-3 text-xs text-muted-foreground">
+                      <p className="flex items-center gap-2 rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
                         <History className="size-4 shrink-0" />
                         زمان قبلی:{" "}
                         {formatNumericDateTime(new Date(appointment.start_at))}
@@ -533,7 +594,7 @@ export function EditBook({
                                 aria-checked={active}
                                 onClick={() => update("status", value)}
                                 className={cn(
-                                  "flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm transition-colors outline-none",
+                                  "flex items-center gap-2 rounded-lg border px-3.5 py-2 text-sm transition-colors outline-none",
                                   "focus-visible:ring-2 focus-visible:ring-ring",
                                   active
                                     ? "border-primary bg-primary/10 font-medium text-primary"
@@ -542,7 +603,7 @@ export function EditBook({
                               >
                                 <span
                                   className={cn(
-                                    "size-2 rounded-full",
+                                    "size-2 rounded-lg",
                                     active
                                       ? "bg-primary"
                                       : "bg-muted-foreground/40"
@@ -568,7 +629,7 @@ export function EditBook({
                           }
                           rows={3}
                           maxLength={2000}
-                          className="resize-none rounded-xl bg-background"
+                          className="resize-none rounded-lg bg-background"
                         />
                       </Field>
                     </div>
@@ -577,7 +638,7 @@ export function EditBook({
                   {error && (
                     <div
                       role="alert"
-                      className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+                      className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
                     >
                       {error}
                     </div>
@@ -593,7 +654,7 @@ export function EditBook({
                 <Button
                   type="submit"
                   disabled={loading || !dirty}
-                  className="h-11 flex-1 rounded-xl px-6 sm:flex-none"
+                  className="h-11 flex-1 rounded-lg px-6 sm:flex-none"
                 >
                   {loading ? "در حال ذخیره..." : "ذخیره تغییرات"}
                 </Button>
@@ -602,14 +663,14 @@ export function EditBook({
                   variant="outline"
                   disabled={loading}
                   onClick={() => handleOpenChange(false)}
-                  className="h-11 rounded-xl"
+                  className="h-11 rounded-lg"
                 >
                   انصراف
                 </Button>
               </div>
 
               {summary.services.length > 0 && (
-                <div className="flex items-center gap-3 rounded-xl bg-muted/60 px-4 py-2 sm:ms-auto">
+                <div className="flex items-center gap-3 rounded-lg bg-muted/60 px-4 py-2 sm:ms-auto">
                   <Wallet className="size-5 shrink-0 text-primary" />
                   <div className="text-sm font-semibold text-foreground">
                     هزینه: {toFa(summary.totalPrice)} تومان

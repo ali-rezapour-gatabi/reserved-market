@@ -65,7 +65,7 @@ export function DayStrip({ selected, onSelect, className }: DayStripProps) {
   return (
     <section
       className={cn(
-        "space-y-3 rounded-2xl bg-card p-4 text-card-foreground shadow-sm",
+        "space-y-3 rounded-lg bg-card p-4 text-card-foreground shadow-sm",
         className
       )}
     >
@@ -74,20 +74,10 @@ export function DayStrip({ selected, onSelect, className }: DayStripProps) {
           <ListChecks className="size-5 text-primary" />
           <div>
             <h2 className="font-bold">نوبت‌ها</h2>
-            {selected && (
-              <p className="text-xs text-muted-foreground">
-                {formatNumericDate(selected)} — {formatTime(selected)}
-              </p>
-            )}
           </div>
         </div>
 
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={goToday}
-        >
+        <Button type="button" size="sm" variant="outline" onClick={goToday}>
           امروز
         </Button>
       </div>
@@ -133,7 +123,7 @@ export function DayStrip({ selected, onSelect, className }: DayStripProps) {
               data-today={isToday}
               onClick={() => onSelect(day)}
               className={cn(
-                "flex min-w-14 shrink-0 flex-col items-center gap-0.5 rounded-xl border px-2 py-2 text-sm transition-colors outline-none",
+                "flex min-w-14 shrink-0 flex-col items-center gap-0.5 rounded-lg border px-2 py-2 text-sm transition-colors outline-none",
                 "focus-visible:ring-2 focus-visible:ring-ring",
                 isSelected
                   ? "border-transparent bg-primary font-medium text-primary-foreground"

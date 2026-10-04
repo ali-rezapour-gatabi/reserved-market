@@ -1,6 +1,7 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { addDays, startOfDay } from "date-fns"
 import {
   CalendarDays,
   CalendarRange,
@@ -56,15 +57,18 @@ import {
   sortWeekdays,
   startOfToday,
   uniqueDates,
+  hasTimeConflict,
   MAX_SESSIONS,
 } from "@/lib/schedule"
 import type {
+  AppointmentRow,
   AppointmentStatus,
   NewBooking,
   Service,
   SessionRange,
   Therapist,
 } from "@/lib/repositories"
+import { listForRange } from "@/lib/repositories"
 
 type ScheduleMode = "dates" | "weekly"
 
@@ -120,7 +124,8 @@ const emptyForm = {
   dates: [] as Date[],
   startDate: [] as Date[],
   weekdays: [] as number[],
-  totalSessions: "8",
+  totalSessions: "4",
+  referral: "",
 }
 
 function createEmptyForm(today: Date, prefill?: CreateBookPrefill) {
@@ -134,6 +139,7 @@ function createEmptyForm(today: Date, prefill?: CreateBookPrefill) {
     time: prefill?.time ?? "",
     dates: [today],
     startDate: [today],
+    referral: "",
   }
 }
 
@@ -152,11 +158,11 @@ function Panel({
 }) {
   return (
     <section
-      className={cn("space-y-4 rounded-xl border bg-card p-3", className)}
+      className={cn("space-y-4 rounded-lg border bg-card p-3", className)}
     >
       <header className="flex items-center gap-3">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <Icon className="size-[18px]" />
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <Icon className="size-4.5" />
         </span>
         <div className="min-w-0">
           <h3 className="text-[15px] leading-tight font-semibold">{title}</h3>
@@ -194,7 +200,7 @@ function Field({
   )
 }
 
-const inputClass = "h-11 rounded-xl bg-background text-center"
+const inputClass = "h-11 rounded-lg bg-background text-center"
 
 export function CreateBook({
   services,
@@ -211,6 +217,7 @@ export function CreateBook({
   const open = isControlled ? openProp : uncontrolledOpen
   const today = useMemo(() => startOfToday(), [])
   const [form, setForm] = useState(() => createEmptyForm(today, prefill))
+  const [appointmentsOnDates, setAppointmentsOnDates] = useState<AppointmentRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
 
@@ -254,6 +261,26 @@ export function CreateBook({
     [form.mode, form.dates, weeklySessions]
   )
 
+  useEffect(() => {
+    if (!open || sessions.length === 0) return
+
+    let active = true
+    const from = startOfDay(sessions[0])
+    const to = addDays(startOfDay(sessions[sessions.length - 1]), 1)
+
+    listForRange(from, to)
+      .then((rows) => {
+        if (active) setAppointmentsOnDates(rows)
+      })
+      .catch(() => {
+        if (active) setAppointmentsOnDates([])
+      })
+
+    return () => {
+      active = false
+    }
+  }, [open, sessions])
+
   const therapistOptions = therapists.map((item) => ({
     value: String(item.id),
     label: item.specialty ? `${item.name} — ${item.specialty}` : item.name,
@@ -273,6 +300,14 @@ export function CreateBook({
     const start = combineDateAndTime(today, form.time)
     return formatClock(addMinutes(start, durationMinutes))
   }, [form.time, durationMinutes, today])
+
+  const timeHasConflict = (time: string) =>
+    sessions.some((date) =>
+      hasTimeConflict(date, time, durationMinutes, appointmentsOnDates)
+    )
+  const selectedTimeHasConflict = Boolean(
+    form.time && timeHasConflict(form.time)
+  )
 
   const resetForm = () => {
     setForm(createEmptyForm(today, prefill))
@@ -337,6 +372,7 @@ export function CreateBook({
       appointment: {
         status: form.status,
         notes: form.notes.trim(),
+        referral: form.referral.trim() || undefined,
       },
       sessions: sessions.map((date): SessionRange => {
         const start = combineDateAndTime(date, form.time)
@@ -407,7 +443,7 @@ export function CreateBook({
           className="flex max-h-[92vh] min-h-0 flex-1 flex-col overflow-y-auto"
         >
           <DialogHeader className="shrink-0 flex-row items-center gap-3 p-5 text-right sm:p-6">
-            <div className="flex size-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
+            <div className="flex size-11 items-center justify-center bg-primary text-primary-foreground">
               <CalendarDays className="size-5" />
             </div>
             <div className="space-y-0.5">
@@ -426,24 +462,24 @@ export function CreateBook({
             <div className="grid gap-4 lg:grid-cols-2 lg:gap-5">
               <div className="space-y-4 lg:space-y-5">
                 <Panel icon={User} title="اطلاعات مشتری">
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field
-                      label="نام و نام خانوادگی"
-                      htmlFor="customer-name"
-                      required
-                    >
-                      <CustomerSearch
-                        value={form.fullName}
-                        onValueChange={(value) => update("fullName", value)}
-                        onSelect={(customer) => {
-                          if (customer.phone.length > 0) {
-                            update("phone", customer.phone)
-                          }
-                        }}
-                        inputClassName={cn(inputClass, "ps-9 text-start")}
-                      />
-                    </Field>
+                  <Field
+                    label="نام و نام خانوادگی"
+                    htmlFor="customer-name"
+                    required
+                  >
+                    <CustomerSearch
+                      value={form.fullName}
+                      onValueChange={(value) => update("fullName", value)}
+                      onSelect={(customer) => {
+                        if (customer.phone.length > 0) {
+                          update("phone", customer.phone)
+                        }
+                      }}
+                      inputClassName={cn(inputClass, "ps-9 text-start")}
+                    />
+                  </Field>
 
+                  <div className="grid gap-4 sm:grid-cols-2">
                     <Field
                       label="شماره موبایل (اختیاری)"
                       htmlFor="customer-phone"
@@ -460,6 +496,23 @@ export function CreateBook({
                             inputClass,
                             "pr-3 pl-3 text-left tabular-nums"
                           )}
+                        />
+                      </div>
+                    </Field>
+
+                    <Field label="معرفی شده توسط " htmlFor="referral">
+                      <div className="relative">
+                        <User className="pointer-events-none absolute inset-y-0 right-3 my-auto size-4 text-muted-foreground" />
+                        <Input
+                          id="referral"
+                          type="text"
+                          dir="rtl"
+                          value={form.referral}
+                          placeholder="نام معرف"
+                          onChange={(event) =>
+                            update("referral", event.target.value)
+                          }
+                          className="pr-10"
                         />
                       </div>
                     </Field>
@@ -526,8 +579,10 @@ export function CreateBook({
                         value={form.time}
                         onChange={(event) => update("time", event.target.value)}
                         aria-label="ساعت شروع"
+                        aria-invalid={selectedTimeHasConflict}
                         className={cn(
-                          "h-14 rounded-xl border-2 bg-background pr-11 pl-3 text-center text-2xl font-semibold tracking-wider tabular-nums",
+                          "h-14 rounded-lg border-2 bg-background pr-11 pl-3 text-center text-2xl font-semibold tracking-wider tabular-nums",
+                          selectedTimeHasConflict && "border-destructive",
                           "focus-visible:border-primary",
                           !form.time && "text-muted-foreground",
                           "[&::-webkit-calendar-picker-indicator]:absolute",
@@ -543,7 +598,7 @@ export function CreateBook({
 
                     <div
                       className={cn(
-                        "flex min-w-32 flex-1 flex-col justify-center rounded-xl px-4 text-sm",
+                        "flex min-w-32 flex-1 flex-col justify-center rounded-lg px-4 text-sm",
                         endTimeLabel
                           ? "bg-primary/10 text-primary"
                           : "border border-dashed text-muted-foreground"
@@ -568,18 +623,25 @@ export function CreateBook({
                   <div className="flex flex-wrap gap-2">
                     {QUICK_TIMES.map((time) => {
                       const active = form.time === time
+                      const busy = timeHasConflict(time)
                       return (
                         <button
                           key={time}
                           type="button"
                           aria-pressed={active}
+                          aria-label={`${toFaDigits(time)}${busy ? "، تداخل با نوبت رزروشده" : ""}`}
+                          title={busy ? "با یک نوبت زمان‌بندی‌شده تداخل دارد" : undefined}
                           onClick={() => update("time", time)}
                           className={cn(
-                            "rounded-full border px-3.5 py-1.5 text-sm tabular-nums transition-colors outline-none",
+                            "rounded-lg border px-3.5 py-1.5 text-sm tabular-nums transition-colors outline-none",
                             "focus-visible:ring-2 focus-visible:ring-ring",
-                            active
-                              ? "border-transparent bg-primary font-medium text-primary-foreground"
-                              : "bg-background hover:bg-muted"
+                            busy
+                              ? active
+                                ? "border-destructive bg-destructive font-medium text-destructive-foreground"
+                                : "border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/15"
+                              : active
+                                ? "border-transparent bg-primary font-medium text-primary-foreground"
+                                : "bg-background hover:bg-muted"
                           )}
                         >
                           {toFaDigits(time)}
@@ -587,9 +649,20 @@ export function CreateBook({
                       )
                     })}
                   </div>
+                  {sessions.length > 0 && (
+                    <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="size-2 rounded-full bg-destructive" />
+                      قرمز: این ساعت در یکی از روزهای انتخابی با نوبت دیگری تداخل دارد.
+                    </p>
+                  )}
+                  {selectedTimeHasConflict && (
+                    <p role="alert" className="text-xs text-destructive">
+                      ساعت انتخاب‌شده در یکی از روزهای انتخابی با نوبت دیگری تداخل دارد.
+                    </p>
+                  )}
                 </Panel>
                 <Panel icon={Repeat} title="روزهای جلسات">
-                  <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
+                  <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
                     <Button
                       type="button"
                       size="sm"
@@ -659,7 +732,7 @@ export function CreateBook({
                       </Field>
 
                       {form.weekdays.length > 0 && requestedTotal > 0 && (
-                        <p className="rounded-xl bg-muted/60 p-3 text-sm text-muted-foreground">
+                        <p className="rounded-lg bg-muted/60 p-3 text-sm text-muted-foreground">
                           هفته‌ای {toFa(form.weekdays.length)} جلسه (
                           {selectedWeekdayLabels}) در حدود {toFa(weeksCount)}{" "}
                           هفته
@@ -669,7 +742,7 @@ export function CreateBook({
                   )}
 
                   {sessions.length > 0 && (
-                    <div className="space-y-2.5 rounded-xl border bg-background p-3">
+                    <div className="space-y-2.5 rounded-lg border bg-background p-3">
                       <div className="flex items-center gap-2 text-sm font-semibold">
                         <ListChecks className="size-4 text-primary" />
                         پیش‌نمایش {toFa(sessions.length)} جلسه
@@ -703,7 +776,7 @@ export function CreateBook({
                     onChange={(event) => update("notes", event.target.value)}
                     rows={3}
                     maxLength={2000}
-                    className="resize-none rounded-xl bg-background"
+                    className="resize-none rounded-lg bg-background"
                   />
                 </Panel>
               </div>
@@ -717,7 +790,7 @@ export function CreateBook({
               <Button
                 type="submit"
                 disabled={loading}
-                className="h-11 flex-1 rounded-xl px-6 sm:flex-none"
+                className="h-11 flex-1 rounded-lg px-6 sm:flex-none"
               >
                 <CalendarRange className="size-4" />
                 {loading
@@ -732,7 +805,7 @@ export function CreateBook({
                     type="button"
                     variant="outline"
                     disabled={loading}
-                    className="h-11 rounded-xl"
+                    className="h-11 rounded-lg"
                   >
                     انصراف
                   </Button>
@@ -741,7 +814,7 @@ export function CreateBook({
               {error && (
                 <div
                   role="alert"
-                  className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+                  className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
                 >
                   {error}
                 </div>
@@ -749,7 +822,7 @@ export function CreateBook({
             </div>
 
             {pickedServices.length > 0 && sessions.length > 0 && (
-              <div className="flex items-center gap-3 rounded-xl bg-muted/60 px-4 py-2 sm:ms-auto">
+              <div className="flex items-center gap-3 rounded-lg bg-muted/60 px-4 py-2 sm:ms-auto">
                 <Wallet className="size-5 shrink-0 text-primary" />
                 <div className="text-xs leading-5 text-muted-foreground">
                   <div>
