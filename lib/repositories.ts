@@ -12,6 +12,11 @@ export type Customer = {
   updated_at: string
 }
 
+export type CustomerInput = {
+  full_name: string
+  phone: string
+}
+
 export type CustomerListRow = Customer & {
   total_sessions: number
   completed_sessions: number
@@ -67,12 +72,14 @@ export type NewBooking = {
     status: AppointmentStatus
     notes: string
     referral?: string
+    price: number
   }
   sessions: SessionRange[]
 }
 
 export type AppointmentEdit = {
   service_ids: number[]
+  price: number
   therapist_id: number | null
   start_at: string
   end_at: string
@@ -98,7 +105,6 @@ export type AppointmentRow = {
   therapist_name: string | null
   remaining?: number
 }
-
 
 export async function listAllServices() {
   const db = await getDatabase()
@@ -208,7 +214,6 @@ export async function deleteService(id: number) {
   return listAllServices()
 }
 
-
 export async function listAllTherapists() {
   const db = await getDatabase()
 
@@ -289,7 +294,6 @@ export async function deleteTherapist(id: number) {
   return listAllTherapists()
 }
 
-
 function normalizeCustomerQuery(value: string) {
   return toEnDigits(value)
     .replace(/[يى]/g, "ی")
@@ -328,6 +332,38 @@ export async function listAllCustomers() {
   )
 }
 
+export async function updateCustomer(id: number, input: CustomerInput) {
+  const db = await getDatabase()
+  const fullName = input.full_name.trim()
+  const phone = toEnDigits(input.phone).trim()
+
+  if (!fullName) {
+    throw new Error("نام مشتری نمی‌تواند خالی باشد.")
+  }
+
+  if (phone && !/^09\d{9}$/.test(phone)) {
+    throw new Error("شماره موبایل باید با ۰۹ شروع شده و ۱۱ رقم باشد.")
+  }
+
+  if (phone) {
+    const duplicates = await db.select<{ id: number }[]>(
+      "SELECT id FROM customers WHERE phone = ? AND id != ? AND deleted_at IS NULL LIMIT 1",
+      [phone, id]
+    )
+
+    if (duplicates.length > 0) {
+      throw new Error("این شماره موبایل برای مشتری دیگری ثبت شده است.")
+    }
+  }
+
+  await db.execute(
+    "UPDATE customers SET full_name = ?, phone = ?, updated_at = ? WHERE id = ?",
+    [fullName, phone, new Date().toISOString(), id]
+  )
+
+  return listAllCustomers()
+}
+
 export async function searchCustomers(query: string, limit = 8) {
   const needle = normalizeCustomerQuery(query)
 
@@ -353,7 +389,6 @@ export async function searchCustomers(query: string, limit = 8) {
     [like, like.replace(/\s/g, ""), needle, limit]
   )
 }
-
 
 async function findBusyRanges(sessions: SessionRange[], excludeId?: number) {
   const db = await getDatabase()
@@ -381,13 +416,13 @@ async function resolveCustomerId(customer: NewBooking["customer"]) {
   const rows =
     phone.length > 0
       ? await db.select<{ id: number }[]>(
-        "SELECT id FROM customers WHERE phone = ? AND deleted_at IS NULL LIMIT 1",
-        [phone]
-      )
+          "SELECT id FROM customers WHERE phone = ? AND deleted_at IS NULL LIMIT 1",
+          [phone]
+        )
       : await db.select<{ id: number }[]>(
-        "SELECT id FROM customers WHERE (phone = '' OR phone IS NULL) AND full_name = ? AND deleted_at IS NULL LIMIT 1",
-        [fullName]
-      )
+          "SELECT id FROM customers WHERE (phone = '' OR phone IS NULL) AND full_name = ? AND deleted_at IS NULL LIMIT 1",
+          [fullName]
+        )
 
   if (rows.length > 0) {
     await db.execute("UPDATE customers SET full_name = ? WHERE id = ?", [
@@ -427,7 +462,12 @@ async function replaceAppointmentServices(
 
 export async function createBooking(booking: NewBooking) {
   const db = await getDatabase()
-  const { services, price } = await resolveServices(booking.service_ids)
+  const { services } = await resolveServices(booking.service_ids)
+  const price = booking.appointment.price
+
+  if (!Number.isSafeInteger(price) || price < 0) {
+    throw new Error("قیمت نوبت باید عددی صحیح و نامنفی باشد.")
+  }
 
   const busy = await findBusyRanges(booking.sessions)
 
@@ -455,7 +495,7 @@ export async function createBooking(booking: NewBooking) {
         booking.appointment.status,
         booking.appointment.notes.length > 0 ? booking.appointment.notes : null,
         booking.appointment.referral || null,
-        slug
+        slug,
       ]
     )
 
@@ -529,7 +569,12 @@ async function withServices(rows: AppointmentBaseRow[]) {
 
 export async function updateAppointment(id: number, input: AppointmentEdit) {
   const db = await getDatabase()
-  const { services, price } = await resolveServices(input.service_ids)
+  const { services } = await resolveServices(input.service_ids)
+  const price = input.price
+
+  if (!Number.isSafeInteger(price) || price < 0) {
+    throw new Error("قیمت نوبت باید عددی صحیح و نامنفی باشد.")
+  }
 
   const busy = await findBusyRanges(
     [

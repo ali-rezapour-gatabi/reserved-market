@@ -1,10 +1,13 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Eye, RefreshCw, Trash2 } from "lucide-react"
+import { Check, Eye, Pencil, RefreshCw, Trash2, X } from "lucide-react"
 
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { PersianNumberInput } from "@/components/persian-number-input"
 import {
   Dialog,
   DialogContent,
@@ -17,6 +20,7 @@ import {
   deleteAppointment,
   listAllCustomers,
   listCustomerAppointments,
+  updateCustomer,
 } from "@/lib/repositories"
 import type { AppointmentRow, CustomerListRow } from "@/lib/repositories"
 
@@ -36,7 +40,14 @@ export default function CustomersPage() {
   const [sessions, setSessions] = useState<AppointmentRow[]>([])
   const [sessionsLoading, setSessionsLoading] = useState(false)
   const [sessionsError, setSessionsError] = useState<string | null>(null)
-  const [deletingSessionId, setDeletingSessionId] = useState<number | null>(null)
+  const [deletingSessionId, setDeletingSessionId] = useState<number | null>(
+    null
+  )
+  const [editingCustomer, setEditingCustomer] = useState(false)
+  const [customerName, setCustomerName] = useState("")
+  const [customerPhone, setCustomerPhone] = useState("")
+  const [customerError, setCustomerError] = useState("")
+  const [savingCustomer, setSavingCustomer] = useState(false)
   const requestId = useRef(0)
 
   useEffect(() => {
@@ -70,6 +81,8 @@ export default function CustomersPage() {
   const openDetails = (customer: CustomerListRow) => {
     const currentRequest = ++requestId.current
     setSelectedCustomer(customer)
+    setEditingCustomer(false)
+    setCustomerError("")
     setSessions([])
     setSessionsError(null)
     setSessionsLoading(true)
@@ -94,9 +107,47 @@ export default function CustomersPage() {
     if (!open) {
       requestId.current++
       setSelectedCustomer(null)
+      setEditingCustomer(false)
+      setCustomerError("")
       setSessions([])
       setSessionsError(null)
       setSessionsLoading(false)
+    }
+  }
+
+  const startEditingCustomer = () => {
+    if (!selectedCustomer) return
+    setCustomerName(selectedCustomer.full_name)
+    setCustomerPhone(selectedCustomer.phone)
+    setCustomerError("")
+    setEditingCustomer(true)
+  }
+
+  const handleUpdateCustomer = async (
+    event: React.FormEvent<HTMLFormElement>
+  ) => {
+    event.preventDefault()
+    if (!selectedCustomer) return
+
+    setSavingCustomer(true)
+    setCustomerError("")
+    try {
+      const rows = await updateCustomer(selectedCustomer.id, {
+        full_name: customerName,
+        phone: customerPhone,
+      })
+      const updated = rows.find((row) => row.id === selectedCustomer.id)
+      if (updated) {
+        setSelectedCustomer(updated)
+        setCustomers(rows)
+      }
+      setEditingCustomer(false)
+    } catch (error) {
+      setCustomerError(
+        error instanceof Error ? error.message : "ویرایش مشتری ناموفق بود."
+      )
+    } finally {
+      setSavingCustomer(false)
     }
   }
 
@@ -248,22 +299,93 @@ export default function CustomersPage() {
         >
           {selectedCustomer && (
             <>
-              <DialogHeader>
+              <DialogHeader className="flex-row items-center justify-between gap-3">
                 <DialogTitle className="text-lg font-bold">
-                  {selectedCustomer.full_name}
+                  {editingCustomer
+                    ? "ویرایش اطلاعات مشتری"
+                    : selectedCustomer.full_name}
                 </DialogTitle>
+                {!editingCustomer && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="ml-10"
+                    onClick={startEditingCustomer}
+                  >
+                    <Pencil className="size-4" />
+                    ویرایش
+                  </Button>
+                )}
               </DialogHeader>
 
-              <dl className="grid gap-4 border-b pb-4 sm:grid-cols-2">
-                <div>
-                  <dt className="text-xs text-muted-foreground">شماره تماس</dt>
-                  <dd className="mt-1 font-medium">
-                    {selectedCustomer.phone
-                      ? toFaDigits(selectedCustomer.phone)
-                      : "بدون شماره"}
-                  </dd>
-                </div>
-              </dl>
+              {editingCustomer ? (
+                <form
+                  onSubmit={handleUpdateCustomer}
+                  className="grid gap-4 border-b pb-4 sm:grid-cols-2"
+                >
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-customer-name">نام مشتری</Label>
+                    <Input
+                      id="edit-customer-name"
+                      value={customerName}
+                      onChange={(event) => setCustomerName(event.target.value)}
+                      required
+                      maxLength={120}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-customer-phone">شماره موبایل</Label>
+                    <PersianNumberInput
+                      id="edit-customer-phone"
+                      value={customerPhone}
+                      onValueChange={setCustomerPhone}
+                      maxLength={11}
+                      placeholder="۰۹۱۲۳۴۵۶۷۸۹"
+                    />
+                  </div>
+                  {customerError && (
+                    <p
+                      role="alert"
+                      className="text-sm text-destructive sm:col-span-2"
+                    >
+                      {customerError}
+                    </p>
+                  )}
+                  <div className="flex gap-2 sm:col-span-2">
+                    <Button type="submit" size="sm" disabled={savingCustomer}>
+                      <Check className="size-4" />
+                      {savingCustomer ? "در حال ذخیره..." : "ذخیره"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={savingCustomer}
+                      onClick={() => {
+                        setEditingCustomer(false)
+                        setCustomerError("")
+                      }}
+                    >
+                      <X className="size-4" />
+                      انصراف
+                    </Button>
+                  </div>
+                </form>
+              ) : (
+                <dl className="grid gap-4 border-b pb-4 sm:grid-cols-2">
+                  <div>
+                    <dt className="text-xs text-muted-foreground">
+                      شماره تماس
+                    </dt>
+                    <dd className="mt-1 font-medium">
+                      {selectedCustomer.phone
+                        ? toFaDigits(selectedCustomer.phone)
+                        : "بدون شماره"}
+                    </dd>
+                  </div>
+                </dl>
+              )}
 
               <div className="flex w-full flex-wrap justify-between gap-x-6 gap-y-2 border-b pb-4 text-sm">
                 <p>

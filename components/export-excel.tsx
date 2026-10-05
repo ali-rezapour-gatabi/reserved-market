@@ -4,6 +4,8 @@ import * as React from "react"
 import { addDays, startOfDay } from "date-fns"
 import { CalendarRange, FileSpreadsheet, Loader2 } from "lucide-react"
 import writeXlsxFile, { type Cell } from "write-excel-file/browser"
+import { save } from "@tauri-apps/plugin-dialog"
+import { writeFile } from "@tauri-apps/plugin-fs"
 
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/date-picker"
@@ -22,15 +24,17 @@ import {
   formatNumericDateTime,
   jalaliParts,
   startOfJalaliMonth,
+  toFa,
   toFaDigits,
 } from "@/lib/jalali"
+import { isDesktop } from "@/lib/database"
 import { APPOINTMENT_STATUS_LABELS, startOfToday } from "@/lib/schedule"
 import { listForRange } from "@/lib/repositories"
 import type { AppointmentRow } from "@/lib/repositories"
 
-const HEADERS = ["تاریخ و ساعت", "مشتری", "خدمت", "متخصص", "وضعیت"]
+const HEADERS = ["تاریخ و ساعت", "مشتری", "خدمت", "متخصص", "وضعیت", "هزینه"]
 
-const COLUMN_WIDTHS = [26, 34, 28, 22, 16]
+const COLUMN_WIDTHS = [26, 34, 28, 22, 16, 20]
 
 function toCell(value: string): Cell {
   return { value, type: String, align: "right" }
@@ -74,6 +78,7 @@ function buildSheet(rows: AppointmentRow[]) {
     ),
     toCell(row.therapist_name ?? "—"),
     toCell(APPOINTMENT_STATUS_LABELS[row.status] ?? row.status),
+    toCell(`${toFa(row.price)} تومان`),
   ])
 
   return [header, ...body]
@@ -121,11 +126,25 @@ export function ExportExcelButton() {
         return
       }
 
-      await writeXlsxFile(buildSheet(rows), {
+      const workbook = writeXlsxFile(buildSheet(rows), {
         sheet: "نوبت‌ها",
         columns: COLUMN_WIDTHS.map((width) => ({ width })),
         rightToLeft: true,
-      }).toFile(fileNameFor(from, to))
+      })
+
+      if (isDesktop()) {
+        const path = await save({
+          defaultPath: fileNameFor(from, to),
+          filters: [{ name: "Excel", extensions: ["xlsx"] }],
+        })
+
+        if (!path) return
+
+        const blob = await workbook.toBlob()
+        await writeFile(path, new Uint8Array(await blob.arrayBuffer()))
+      } else {
+        await workbook.toFile(fileNameFor(from, to))
+      }
 
       setOpen(false)
     } catch (err) {
@@ -173,12 +192,12 @@ export function ExportExcelButton() {
               <DatePicker
                 mode="single"
                 value={[from]}
+                allowPast
                 onChange={(value) => {
                   if (value[0]) {
                     setFrom(value[0])
                   }
                 }}
-                minDate={today}
                 placeholder="انتخاب تاریخ شروع"
               />
             </div>
@@ -190,12 +209,12 @@ export function ExportExcelButton() {
               <DatePicker
                 mode="single"
                 value={[to]}
+                allowPast
                 onChange={(value) => {
                   if (value[0]) {
                     setTo(value[0])
                   }
                 }}
-                minDate={today}
                 placeholder="انتخاب تاریخ پایان"
               />
             </div>

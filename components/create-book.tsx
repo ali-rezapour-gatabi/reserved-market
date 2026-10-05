@@ -116,6 +116,7 @@ const emptyForm = {
   fullName: "",
   phone: "",
   serviceIds: [] as number[],
+  price: "",
   therapistId: "",
   time: "",
   status: "scheduled" as AppointmentStatus,
@@ -217,7 +218,9 @@ export function CreateBook({
   const open = isControlled ? openProp : uncontrolledOpen
   const today = useMemo(() => startOfToday(), [])
   const [form, setForm] = useState(() => createEmptyForm(today, prefill))
-  const [appointmentsOnDates, setAppointmentsOnDates] = useState<AppointmentRow[]>([])
+  const [appointmentsOnDates, setAppointmentsOnDates] = useState<
+    AppointmentRow[]
+  >([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
 
@@ -236,6 +239,7 @@ export function CreateBook({
     () => summarizeServices(activeServices, form.serviceIds),
     [activeServices, form.serviceIds]
   )
+  const appointmentPrice = form.price === "" ? totalPrice : Number(form.price)
 
   const toggleService = (id: number) =>
     update(
@@ -323,6 +327,10 @@ export function CreateBook({
       return "شماره موبایل باید با ۰۹ شروع شده و ۱۱ رقم باشد."
     }
 
+    if (!Number.isSafeInteger(appointmentPrice) || appointmentPrice < 0) {
+      return "قیمت نوبت باید عددی صحیح و نامنفی باشد."
+    }
+
     if (!form.time) {
       return "ساعت شروع را انتخاب کنید."
     }
@@ -373,6 +381,7 @@ export function CreateBook({
         status: form.status,
         notes: form.notes.trim(),
         referral: form.referral.trim() || undefined,
+        price: appointmentPrice,
       },
       sessions: sessions.map((date): SessionRange => {
         const start = combineDateAndTime(date, form.time)
@@ -539,6 +548,32 @@ export function CreateBook({
                     />
                   </Field>
 
+                  <Field
+                    label="قیمت دریافتی هر جلسه"
+                    htmlFor="appointment-price"
+                  >
+                    <div className="relative">
+                      <PersianNumberInput
+                        id="appointment-price"
+                        value={
+                          form.price === "" ? String(totalPrice) : form.price
+                        }
+                        onValueChange={(value) => update("price", value)}
+                        className={cn(inputClass, "pr-16")}
+                        aria-describedby="appointment-price-hint"
+                      />
+                      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">
+                        تومان
+                      </span>
+                    </div>
+                    <p
+                      id="appointment-price-hint"
+                      className="text-xs text-muted-foreground"
+                    >
+                      قیمت خدمات انتخاب‌شده: {toFa(totalPrice)} تومان
+                    </p>
+                  </Field>
+
                   <Field label="متخصص ماساژ">
                     <Select
                       items={therapistOptions}
@@ -630,14 +665,18 @@ export function CreateBook({
                           type="button"
                           aria-pressed={active}
                           aria-label={`${toFaDigits(time)}${busy ? "، تداخل با نوبت رزروشده" : ""}`}
-                          title={busy ? "با یک نوبت زمان‌بندی‌شده تداخل دارد" : undefined}
+                          title={
+                            busy
+                              ? "با یک نوبت زمان‌بندی‌شده تداخل دارد"
+                              : undefined
+                          }
                           onClick={() => update("time", time)}
                           className={cn(
                             "rounded-lg border px-3.5 py-1.5 text-sm tabular-nums transition-colors outline-none",
                             "focus-visible:ring-2 focus-visible:ring-ring",
                             busy
                               ? active
-                                ? "border-destructive bg-destructive font-medium text-destructive-foreground"
+                                ? "text-destructive-foreground border-destructive bg-destructive font-medium"
                                 : "border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/15"
                               : active
                                 ? "border-transparent bg-primary font-medium text-primary-foreground"
@@ -652,12 +691,14 @@ export function CreateBook({
                   {sessions.length > 0 && (
                     <p className="flex items-center gap-2 text-xs text-muted-foreground">
                       <span className="size-2 rounded-full bg-destructive" />
-                      قرمز: این ساعت در یکی از روزهای انتخابی با نوبت دیگری تداخل دارد.
+                      قرمز: این ساعت در یکی از روزهای انتخابی با نوبت دیگری
+                      تداخل دارد.
                     </p>
                   )}
                   {selectedTimeHasConflict && (
                     <p role="alert" className="text-xs text-destructive">
-                      ساعت انتخاب‌شده در یکی از روزهای انتخابی با نوبت دیگری تداخل دارد.
+                      ساعت انتخاب‌شده در یکی از روزهای انتخابی با نوبت دیگری
+                      تداخل دارد.
                     </p>
                   )}
                 </Panel>
@@ -821,15 +862,16 @@ export function CreateBook({
               )}
             </div>
 
-            {pickedServices.length > 0 && sessions.length > 0 && (
+            {sessions.length > 0 && (
               <div className="flex items-center gap-3 rounded-lg bg-muted/60 px-4 py-2 sm:ms-auto">
                 <Wallet className="size-5 shrink-0 text-primary" />
                 <div className="text-xs leading-5 text-muted-foreground">
                   <div>
-                    {toFa(totalPrice)} تومان × {toFa(sessions.length)} جلسه
+                    {toFa(appointmentPrice)} تومان × {toFa(sessions.length)}{" "}
+                    جلسه
                   </div>
                   <div className="text-sm font-semibold text-foreground">
-                    مجموع: {toFa(totalPrice * sessions.length)} تومان
+                    مجموع: {toFa(appointmentPrice * sessions.length)} تومان
                   </div>
                 </div>
               </div>

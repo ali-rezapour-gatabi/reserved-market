@@ -20,6 +20,7 @@ type DatePickerProps = {
   minDate?: Date
   maxDate?: Date
   maxSelection?: number
+  allowPast?: boolean
   placeholder?: string
   disabled?: boolean
   className?: string
@@ -32,13 +33,14 @@ export function DatePicker({
   minDate,
   maxDate,
   maxSelection,
+  allowPast = false,
   placeholder = "انتخاب تاریخ",
   disabled,
   className,
 }: DatePickerProps) {
   const [open, setOpen] = useState(false)
 
-  const from = minDate ?? startOfToday()
+  const from = allowPast ? undefined : (minDate ?? startOfToday())
 
   const limitReached =
     mode === "multiple" &&

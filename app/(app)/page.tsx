@@ -1,15 +1,20 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { addDays, startOfDay } from "date-fns"
+import { addDays, isSameDay, startOfDay } from "date-fns"
 import {
+  CalendarDays,
   CalendarPlus,
   Check,
+  CircleAlert,
+  CircleCheck,
+  CircleDollarSign,
   Eye,
   Pencil,
   RefreshCw,
   Trash2,
   Undo2,
+  X,
 } from "lucide-react"
 
 import { DayStrip } from "@/components/day-strip"
@@ -85,6 +90,13 @@ export default function DashboardPage() {
 
     return () => window.clearInterval(interval)
   }, [])
+
+  useEffect(() => {
+    if (!feedback) return
+
+    const timeout = window.setTimeout(() => setFeedback(null), 5000)
+    return () => window.clearTimeout(timeout)
+  }, [feedback])
 
   useEffect(() => {
     let active = true
@@ -190,6 +202,44 @@ export default function DashboardPage() {
   ).length
 
   const dayDone = pendingCount === 0 && doneCount > 0
+  const completedRevenue = dayAppointments.reduce(
+    (sum, row) => sum + (row.status === "completed" ? row.price : 0),
+    0
+  )
+  const dayMetrics = [
+    {
+      label: "کل نوبت‌ها",
+      value: toFa(dayAppointments.length),
+      detail: "ثبت‌شده برای این روز",
+      icon: CalendarDays,
+      tone: "text-primary",
+      iconTone: "bg-primary/10",
+    },
+    {
+      label: "زمان‌بندی‌شده",
+      value: toFa(pendingCount),
+      detail: "در انتظار انجام",
+      icon: RefreshCw,
+      tone: "text-foreground",
+      iconTone: "bg-muted",
+    },
+    {
+      label: "انجام‌شده",
+      value: toFa(doneCount),
+      detail: "تکمیل‌شده در این روز",
+      icon: CircleCheck,
+      tone: "text-primary",
+      iconTone: "bg-primary/10",
+    },
+    {
+      label: "دریافتی روز",
+      value: `${toFa(completedRevenue)} تومان`,
+      detail: "",
+      icon: CircleDollarSign,
+      tone: "text-secondary-foreground",
+      iconTone: "bg-secondary/30",
+    },
+  ]
 
   const isAppointmentInProgress = (row: AppointmentRow) =>
     row.status === "scheduled" &&
@@ -279,8 +329,7 @@ export default function DashboardPage() {
     } catch (error) {
       setFeedback({
         kind: "error",
-        text:
-          error instanceof Error ? error.message : "حذف نوبت ناموفق بود.",
+        text: error instanceof Error ? error.message : "حذف نوبت ناموفق بود.",
       })
     }
   }
@@ -335,15 +384,12 @@ export default function DashboardPage() {
       ),
     },
     {
-      key: "service",
-      header: "خدمت",
-      accessor: (row) => row.service_names.join("، "),
-      cell: (row) =>
-        row.service_names.length > 0 ? (
-          <span>{row.service_names.join("، ")}</span>
-        ) : (
-          <span className="text-muted-foreground">بدون خدمت</span>
-        ),
+      key: "price",
+      header: "هزینه",
+      accessor: (row) => row.price,
+      cell: (row) => (
+        <span className="whitespace-nowrap">{toFa(row.price)} تومان</span>
+      ),
     },
     {
       key: "therapist",
@@ -366,8 +412,7 @@ export default function DashboardPage() {
             "rounded-lg px-2.5 py-0.5 text-xs " +
             (isAppointmentInProgress(row)
               ? "bg-primary text-primary-foreground"
-              : (STATUS_STYLES[row.status] ??
-                "bg-muted text-muted-foreground"))
+              : (STATUS_STYLES[row.status] ?? "bg-muted text-muted-foreground"))
           }
         >
           {isAppointmentInProgress(row)
@@ -464,84 +509,125 @@ export default function DashboardPage() {
 
   return (
     <>
-      {feedback && (
-        <div
-          role={feedback.kind === "error" ? "alert" : "status"}
-          className={
-            feedback.kind === "error"
-              ? "flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-              : "flex items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/10 p-3 text-sm text-primary"
-          }
-        >
-          <span>{feedback.text}</span>
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost"
-            onClick={() => setFeedback(null)}
-          >
-            بستن
-          </Button>
-        </div>
-      )}
+      <div className="animate-in space-y-5 duration-500 fade-in-0">
+        <section className="flex flex-col justify-between gap-4 border-b border-border/70 pb-5 sm:flex-row sm:items-center">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+              <CalendarDays className="size-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-muted-foreground">
+                {isSameDay(selectedDay, new Date())
+                  ? "امروز"
+                  : weekdayName(selectedDay)}
+                <span className="px-1.5">·</span>
+                {formatNumericDate(selectedDay)}
+              </p>
+              <h1 className="mt-0.5 text-xl font-bold sm:text-2xl">
+                مدیریت نوبت‌ها
+              </h1>
+            </div>
+          </div>
 
-      <DayStrip selected={selectedDay} onSelect={setSelectedDay} />
-
-      <DataTable
-        columns={columns}
-        data={dayAppointments}
-        getRowId={(row) => row.id}
-        initialSort={{ key: "start", dir: "asc" }}
-        searchPlaceholder="جستجوی مشتری، خدمت یا متخصص..."
-        emptyMessage={`برای ${formatNumericDate(selectedDay)} نوبتی ثبت نشده است.`}
-        pageSize={8}
-        getRowClassName={(row) =>
-          isAppointmentInProgress(row)
-            ? "bg-primary/5 hover:bg-primary/10"
-            : undefined
-        }
-        toolbar={
-          <>
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             <Button
               type="button"
-              size="sm"
+              size="icon"
               variant="outline"
               onClick={bumpRevision}
+              aria-label="نوسازی نوبت‌ها"
+              title="نوسازی نوبت‌ها"
             >
               <RefreshCw className="size-4" />
-              نوسازی
             </Button>
-
             <ExportExcelButton />
-
-            <Button
-              type="button"
-              size="sm"
-              variant={dayDone ? "secondary" : "outline"}
-              onClick={handleToggleDayDone}
-              disabled={dayDone ? doneCount === 0 : pendingCount === 0}
-              title={
-                dayDone
-                  ? "بازگرداندن نوبت‌های این روز به حالت زمان‌بندی‌شده"
-                  : "علامت‌زدن همهٔ نوبت‌های این روز به‌عنوان انجام‌شده"
-              }
-            >
-              {dayDone ? (
-                <Undo2 className="size-4" />
-              ) : (
-                <Check className="size-4" />
-              )}
-              {dayDone ? "بازگشت به زمان‌بندی" : "پایان کار روز"}
-            </Button>
-
             <CreateBook
               services={services}
               therapists={therapists}
               onCreate={handleCreate}
             />
-          </>
-        }
-      />
+          </div>
+        </section>
+
+        <section
+          aria-label="خلاصه نوبت‌های روز"
+          className="grid grid-cols-2 overflow-hidden rounded-lg border bg-card sm:grid-cols-2 xl:grid-cols-4"
+        >
+          {dayMetrics.map((metric, index) => {
+            const Icon = metric.icon
+
+            return (
+              <div
+                key={metric.label}
+                className={`flex min-w-0 items-center gap-3 bg-primary/10 px-3 py-2 sm:px-4 ${
+                  index % 2 === 1 ? "border-s" : ""
+                } ${index >= 2 ? "border-t xl:border-t-0" : ""} ${
+                  index > 0 ? "sm:border-t-0 xl:border-s" : ""
+                }`}
+              >
+                <span
+                  className={`flex size-10 shrink-0 items-center justify-center rounded-lg ${metric.iconTone} ${metric.tone}`}
+                >
+                  <Icon className="size-4.5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-xs text-muted-foreground">
+                    {metric.label}
+                  </p>
+                  <p
+                    className={`mt-0.5 flex items-center gap-2 truncate text-base font-bold tabular-nums sm:text-lg ${metric.tone}`}
+                  >
+                    {metric.value}
+                    <p className="truncate text-[11px] text-muted-foreground">
+                      {metric.detail}
+                    </p>
+                  </p>
+                </div>
+              </div>
+            )
+          })}
+        </section>
+
+        <DayStrip selected={selectedDay} onSelect={setSelectedDay} />
+
+        <section className="space-y-3">
+          <DataTable
+            columns={columns}
+            data={dayAppointments}
+            getRowId={(row) => row.id}
+            initialSort={{ key: "start", dir: "asc" }}
+            searchPlaceholder="جستجوی مشتری، خدمت یا متخصص..."
+            emptyMessage={`برای ${formatNumericDate(selectedDay)} نوبتی ثبت نشده است.`}
+            pageSize={8}
+            getRowClassName={(row) =>
+              isAppointmentInProgress(row)
+                ? "bg-primary/5 hover:bg-primary/10"
+                : undefined
+            }
+            toolbar={
+              <Button
+                type="button"
+                size="sm"
+                variant={dayDone ? "default" : "outline"}
+                onClick={handleToggleDayDone}
+                disabled={dayDone ? doneCount === 0 : pendingCount === 0}
+                title={
+                  dayDone
+                    ? "بازگرداندن نوبت‌های این روز به حالت زمان‌بندی‌شده"
+                    : "علامت‌زدن همهٔ نوبت‌های این روز به‌عنوان انجام‌شده"
+                }
+              >
+                {dayDone ? (
+                  <Undo2 className="size-4" />
+                ) : (
+                  <Check className="size-4" />
+                )}
+                {dayDone ? "بازگشت به زمان‌بندی" : "پایان کار روز"}
+              </Button>
+            }
+          />
+        </section>
+      </div>
 
       <Dialog
         open={viewing !== null}
@@ -651,6 +737,36 @@ export default function DashboardPage() {
           </section>
         </DialogContent>
       </Dialog>
+
+      {feedback && (
+        <div className="pointer-events-none fixed inset-x-4 bottom-4 z-100 flex justify-center sm:inset-x-auto sm:inset-e-6 sm:w-full sm:max-w-md">
+          <div
+            role="status"
+            aria-live={feedback.kind === "error" ? "assertive" : "polite"}
+            className={`pointer-events-auto flex w-full animate-in items-start gap-3 rounded-lg border p-4 text-sm shadow-lg fade-in slide-in-from-bottom-2 ${
+              feedback.kind === "error"
+                ? "border-destructive/30 bg-card text-destructive"
+                : "border-primary/30 bg-card text-foreground"
+            }`}
+          >
+            {feedback.kind === "error" ? (
+              <CircleAlert className="mt-0.5 size-5 shrink-0 text-destructive" />
+            ) : (
+              <CircleCheck className="mt-0.5 size-5 shrink-0 text-primary" />
+            )}
+            <p className="min-w-0 flex-1 leading-6">{feedback.text}</p>
+            <Button
+              type="button"
+              size="icon-xs"
+              variant="ghost"
+              aria-label="بستن پیام"
+              onClick={() => setFeedback(null)}
+            >
+              <X className="size-4" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       <CreateBook
         key={repeatSource?.id ?? "no-repeat"}

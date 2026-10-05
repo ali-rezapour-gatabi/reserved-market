@@ -2,14 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { addDays, isSameDay, startOfDay } from "date-fns"
-import { ChevronLeft, ChevronRight, ListChecks } from "lucide-react"
+import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
-  formatNumericDate,
   formatNumericMonth,
-  formatTime,
   jalaliParts,
   startOfJalaliMonth,
   toFa,
@@ -47,10 +45,22 @@ export function DayStrip({ selected, onSelect, className }: DayStripProps) {
 
   const scrollRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
+    const container = scrollRef.current
     const target =
-      scrollRef.current?.querySelector<HTMLElement>("[aria-pressed='true']") ??
-      scrollRef.current?.querySelector<HTMLElement>("[data-today='true']")
-    target?.scrollIntoView({ inline: "center", block: "nearest" })
+      container?.querySelector<HTMLElement>("[aria-pressed='true']") ??
+      container?.querySelector<HTMLElement>("[data-today='true']")
+
+    if (!container || !target) return
+
+    const containerRect = container.getBoundingClientRect()
+    const targetRect = target.getBoundingClientRect()
+    container.scrollBy({
+      left:
+        targetRect.left -
+        containerRect.left -
+        (containerRect.width - targetRect.width) / 2,
+      behavior: "smooth",
+    })
   }, [monthStart, selected])
 
   const goNext = () =>
@@ -65,50 +75,55 @@ export function DayStrip({ selected, onSelect, className }: DayStripProps) {
   return (
     <section
       className={cn(
-        "space-y-3 rounded-lg bg-card p-4 text-card-foreground shadow-sm",
+        "overflow-hidden rounded-lg border bg-card text-card-foreground",
         className
       )}
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <ListChecks className="size-5 text-primary" />
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
+        <div className="flex items-center gap-3">
+          <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <CalendarDays className="size-4" />
+          </span>
           <div>
-            <h2 className="font-bold">نوبت‌ها</h2>
+            <h2 className="text-sm font-semibold">انتخاب روز</h2>
+            <p className="text-xs text-muted-foreground">
+              {formatNumericMonth(jy, jm)}
+            </p>
           </div>
         </div>
 
-        <Button type="button" size="sm" variant="outline" onClick={goToday}>
-          امروز
-        </Button>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          size="icon"
-          variant="outline"
-          onClick={goPrev}
-          aria-label="ماه قبل"
-        >
-          <ChevronRight className="size-4" />
-        </Button>
-
-        <div className="flex flex-1 items-center justify-center gap-2">
-          <span className="font-semibold">{formatNumericMonth(jy, jm)}</span>
+        <div className="flex items-center gap-2">
+          <Button type="button" size="sm" variant="secondary" onClick={goToday}>
+            امروز
+          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              onClick={goPrev}
+              aria-label="ماه قبل"
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              onClick={goNext}
+              aria-label="ماه بعد"
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+          </div>
         </div>
-
-        <Button
-          type="button"
-          size="icon"
-          variant="outline"
-          onClick={goNext}
-          aria-label="ماه بعد"
-        >
-          <ChevronLeft className="size-4" />
-        </Button>
       </div>
 
-      <div ref={scrollRef} className="flex gap-1.5 overflow-x-auto pb-5">
+      <div
+        ref={scrollRef}
+        className="flex gap-2 overflow-x-auto px-4 py-3"
+        aria-label="روزهای ماه"
+      >
         {days.map((day) => {
           const { jd } = jalaliParts(day)
           const isToday = isSameDay(day, today)
@@ -121,24 +136,26 @@ export function DayStrip({ selected, onSelect, className }: DayStripProps) {
               type="button"
               aria-pressed={isSelected}
               data-today={isToday}
+              aria-label={`${WEEKDAY_SHORT_BY_DAY[day.getDay()]}، ${toFa(jd)} ${formatNumericMonth(jy, jm)}`}
               onClick={() => onSelect(day)}
               className={cn(
-                "flex min-w-14 shrink-0 flex-col items-center gap-0.5 rounded-lg border px-2 py-2 text-sm transition-colors outline-none",
+                "flex h-16 w-14 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border text-sm transition-colors outline-none",
                 "focus-visible:ring-2 focus-visible:ring-ring",
                 isSelected
-                  ? "border-transparent bg-primary font-medium text-primary-foreground"
+                  ? "border-primary bg-primary font-medium text-primary-foreground shadow-sm"
                   : "border-transparent bg-muted/50 hover:bg-muted",
                 isPast && !isSelected && "opacity-60",
                 isToday &&
                   !isSelected &&
-                  "border-primary/40 bg-secondary/25 font-medium text-secondary-foreground opacity-100"
+                  "border-secondary bg-secondary/30 font-medium text-secondary-foreground opacity-100"
               )}
             >
-              <span className="text-xs opacity-80">
+              <span className="text-[11px] leading-none opacity-80">
                 {WEEKDAY_SHORT_BY_DAY[day.getDay()]}
               </span>
-              <span className="text-lg leading-tight">{toFa(jd)}</span>
-              <span className="text-[10px] opacity-70">ماه {toFa(jm)}</span>
+              <span className="text-lg leading-none tabular-nums">
+                {toFa(jd)}
+              </span>
             </button>
           )
         })}

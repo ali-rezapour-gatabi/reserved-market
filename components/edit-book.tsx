@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/date-picker"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { PersianNumberInput } from "@/components/persian-number-input"
 import {
   DEFAULT_SESSION_MINUTES,
   ServicePicker,
@@ -81,6 +82,7 @@ function pad2(value: number) {
 
 type EditForm = {
   serviceIds: number[]
+  price: string
   therapistId: string
   date: Date | null
   time: string
@@ -93,6 +95,7 @@ function toForm(appointment: AppointmentRow): EditForm {
 
   return {
     serviceIds: appointment.service_ids,
+    price: String(appointment.price),
     therapistId: appointment.therapist_id
       ? String(appointment.therapist_id)
       : "",
@@ -120,6 +123,7 @@ function isDirty(a: EditForm, b: EditForm) {
   return !(
     sameDate &&
     sameServices &&
+    a.price === b.price &&
     a.therapistId === b.therapistId &&
     a.time === b.time &&
     a.status === b.status &&
@@ -197,7 +201,9 @@ export function EditBook({
   )
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
-  const [appointmentsOnDate, setAppointmentsOnDate] = useState<AppointmentRow[]>([])
+  const [appointmentsOnDate, setAppointmentsOnDate] = useState<
+    AppointmentRow[]
+  >([])
 
   const today = startOfToday()
 
@@ -223,14 +229,20 @@ export function EditBook({
   const update = <Key extends keyof EditForm>(key: Key, value: EditForm[Key]) =>
     setForm((prev) => (prev === null ? prev : { ...prev, [key]: value }))
 
+  const updateServiceIds = (serviceIds: number[]) => {
+    const price = summarizeServices(services, serviceIds).totalPrice
+    setForm((prev) =>
+      prev === null ? prev : { ...prev, serviceIds, price: String(price) }
+    )
+  }
+
   const summary = useMemo(
     () => summarizeServices(services, form?.serviceIds ?? []),
     [services, form?.serviceIds]
   )
 
   const toggleService = (id: number) =>
-    update(
-      "serviceIds",
+    updateServiceIds(
       (form?.serviceIds ?? []).includes(id)
         ? (form?.serviceIds ?? []).filter((item) => item !== id)
         : [...(form?.serviceIds ?? []), id]
@@ -254,14 +266,14 @@ export function EditBook({
 
   const selectedTimeHasConflict = Boolean(
     form?.date &&
-      form.time &&
-      hasTimeConflict(
-        form.date,
-        form.time,
-        summary.durationMinutes,
-        appointmentsOnDate,
-        appointment?.id
-      )
+    form.time &&
+    hasTimeConflict(
+      form.date,
+      form.time,
+      summary.durationMinutes,
+      appointmentsOnDate,
+      appointment?.id
+    )
   )
 
   const dirty =
@@ -306,6 +318,12 @@ export function EditBook({
       return
     }
 
+    const price = Number(form.price)
+    if (!Number.isSafeInteger(price) || price < 0) {
+      setError("قیمت نوبت باید عددی صحیح و نامنفی باشد.")
+      return
+    }
+
     if (!form.time) {
       setError("ساعت شروع را انتخاب کنید.")
       return
@@ -324,6 +342,7 @@ export function EditBook({
       setError("")
       await onSave(appointment.id, {
         service_ids: summary.services.map((item) => item.id),
+        price,
         therapist_id: form.therapistId ? Number(form.therapistId) : null,
         start_at: start.toISOString(),
         end_at: end.toISOString(),
@@ -468,13 +487,13 @@ export function EditBook({
                           const active = form.time === time
                           const busy = Boolean(
                             form.date &&
-                              hasTimeConflict(
-                                form.date,
-                                time,
-                                summary.durationMinutes,
-                                appointmentsOnDate,
-                                appointment?.id
-                              )
+                            hasTimeConflict(
+                              form.date,
+                              time,
+                              summary.durationMinutes,
+                              appointmentsOnDate,
+                              appointment?.id
+                            )
                           )
                           return (
                             <button
@@ -482,14 +501,18 @@ export function EditBook({
                               type="button"
                               aria-pressed={active}
                               aria-label={`${toFaDigits(time)}${busy ? "، تداخل با نوبت رزروشده" : ""}`}
-                              title={busy ? "با یک نوبت زمان‌بندی‌شده تداخل دارد" : undefined}
+                              title={
+                                busy
+                                  ? "با یک نوبت زمان‌بندی‌شده تداخل دارد"
+                                  : undefined
+                              }
                               onClick={() => update("time", time)}
                               className={cn(
                                 "rounded-lg border px-3.5 py-1.5 text-sm tabular-nums transition-colors outline-none",
                                 "focus-visible:ring-2 focus-visible:ring-ring",
                                 busy
                                   ? active
-                                    ? "border-destructive bg-destructive font-medium text-destructive-foreground"
+                                    ? "text-destructive-foreground border-destructive bg-destructive font-medium"
                                     : "border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/15"
                                   : active
                                     ? "border-transparent bg-primary font-medium text-primary-foreground"
@@ -505,11 +528,12 @@ export function EditBook({
                         <span className="size-2 rounded-full bg-destructive" />
                         قرمز: این ساعت با نوبت زمان‌بندی‌شدهٔ دیگری تداخل دارد.
                       </p>
-                      {selectedTimeHasConflict && form.status === "scheduled" && (
-                        <p role="alert" className="text-xs text-destructive">
-                          ساعت انتخاب‌شده با نوبت دیگری تداخل دارد.
-                        </p>
-                      )}
+                      {selectedTimeHasConflict &&
+                        form.status === "scheduled" && (
+                          <p role="alert" className="text-xs text-destructive">
+                            ساعت انتخاب‌شده با نوبت دیگری تداخل دارد.
+                          </p>
+                        )}
                     </Panel>
 
                     {timeChanged && (
@@ -542,6 +566,31 @@ export function EditBook({
                           onToggle={toggleService}
                           onClear={() => update("serviceIds", [])}
                         />
+                      </Field>
+
+                      <Field
+                        label="قیمت دریافتی این جلسه"
+                        htmlFor="edit-appointment-price"
+                      >
+                        <div className="relative">
+                          <PersianNumberInput
+                            id="edit-appointment-price"
+                            value={form.price}
+                            onValueChange={(value) => update("price", value)}
+                            className={cn(inputClass, "pr-16")}
+                            aria-describedby="edit-appointment-price-hint"
+                          />
+                          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">
+                            تومان
+                          </span>
+                        </div>
+                        <p
+                          id="edit-appointment-price-hint"
+                          className="text-xs text-muted-foreground"
+                        >
+                          قیمت خدمات انتخاب‌شده: {toFa(summary.totalPrice)}{" "}
+                          تومان
+                        </p>
                       </Field>
 
                       <Field label="متخصص ماساژ">
@@ -669,14 +718,12 @@ export function EditBook({
                 </Button>
               </div>
 
-              {summary.services.length > 0 && (
-                <div className="flex items-center gap-3 rounded-lg bg-muted/60 px-4 py-2 sm:ms-auto">
-                  <Wallet className="size-5 shrink-0 text-primary" />
-                  <div className="text-sm font-semibold text-foreground">
-                    هزینه: {toFa(summary.totalPrice)} تومان
-                  </div>
+              <div className="flex items-center gap-3 rounded-lg bg-muted/60 px-4 py-2 sm:ms-auto">
+                <Wallet className="size-5 shrink-0 text-primary" />
+                <div className="text-sm font-semibold text-foreground">
+                  هزینه: {toFa(Number(form.price) || 0)} تومان
                 </div>
-              )}
+              </div>
             </DialogFooter>
           </form>
         )}
