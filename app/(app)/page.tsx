@@ -336,21 +336,21 @@ export default function DashboardPage() {
 
   const repeatPrefill: CreateBookPrefill | undefined = repeatSource
     ? {
-        fullName: repeatSource.full_name,
-        phone: repeatSource.phone,
-        serviceIds: repeatSource.service_ids,
-        therapistId:
-          repeatSource.therapist_id === null
-            ? ""
-            : String(repeatSource.therapist_id),
-        notes: repeatSource.notes ?? "",
-        time: (() => {
-          const start = new Date(repeatSource.start_at)
-          return `${String(start.getHours()).padStart(2, "0")}:${String(
-            start.getMinutes()
-          ).padStart(2, "0")}`
-        })(),
-      }
+      fullName: repeatSource.full_name,
+      phone: repeatSource.phone,
+      serviceIds: repeatSource.service_ids,
+      therapistId:
+        repeatSource.therapist_id === null
+          ? ""
+          : String(repeatSource.therapist_id),
+      notes: repeatSource.notes ?? "",
+      time: (() => {
+        const start = new Date(repeatSource.start_at)
+        return `${String(start.getHours()).padStart(2, "0")}:${String(
+          start.getMinutes()
+        ).padStart(2, "0")}`
+      })(),
+    }
     : undefined
 
   const columns: DataTableColumn<AppointmentRow>[] = [
@@ -559,11 +559,9 @@ export default function DashboardPage() {
             return (
               <div
                 key={metric.label}
-                className={`flex min-w-0 items-center gap-3 bg-primary/10 px-3 py-2 sm:px-4 ${
-                  index % 2 === 1 ? "border-s" : ""
-                } ${index >= 2 ? "border-t xl:border-t-0" : ""} ${
-                  index > 0 ? "sm:border-t-0 xl:border-s" : ""
-                }`}
+                className={`flex min-w-0 items-center gap-3 bg-primary/10 px-3 py-2 sm:px-4 ${index % 2 === 1 ? "border-s" : ""
+                  } ${index >= 2 ? "border-t xl:border-t-0" : ""} ${index > 0 ? "sm:border-t-0 xl:border-s" : ""
+                  }`}
               >
                 <span
                   className={`flex size-10 shrink-0 items-center justify-center rounded-lg ${metric.iconTone} ${metric.tone}`}
@@ -672,13 +670,13 @@ export default function DashboardPage() {
                     viewingSessionsLoading
                       ? "در حال دریافت..."
                       : `${toFa(
-                          Math.max(
-                            1,
-                            viewingSessions.findIndex(
-                              (session) => session.id === viewing.id
-                            ) + 1
-                          )
-                        )} از ${toFa(Math.max(1, viewingSessions.length))}`,
+                        Math.max(
+                          1,
+                          viewingSessions.findIndex(
+                            (session) => session.id === viewing.id
+                          ) + 1
+                        )
+                      )} از ${toFa(Math.max(1, viewingSessions.length))}`,
                   ],
                   ["هزینه", `${toFa(viewing.price)} تومان`],
                   ["معرفی از", viewing.referral || "—"],
@@ -743,11 +741,10 @@ export default function DashboardPage() {
           <div
             role="status"
             aria-live={feedback.kind === "error" ? "assertive" : "polite"}
-            className={`pointer-events-auto flex w-full animate-in items-start gap-3 rounded-lg border p-4 text-sm shadow-lg fade-in slide-in-from-bottom-2 ${
-              feedback.kind === "error"
+            className={`pointer-events-auto flex w-full animate-in items-start gap-3 rounded-lg border p-4 text-sm shadow-lg fade-in slide-in-from-bottom-2 ${feedback.kind === "error"
                 ? "border-destructive/30 bg-card text-destructive"
                 : "border-primary/30 bg-card text-foreground"
-            }`}
+              }`}
           >
             {feedback.kind === "error" ? (
               <CircleAlert className="mt-0.5 size-5 shrink-0 text-destructive" />

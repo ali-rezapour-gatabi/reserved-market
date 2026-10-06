@@ -81,6 +81,16 @@ function buildSheet(rows: AppointmentRow[]) {
     toCell(`${toFa(row.price)} تومان`),
   ])
 
+
+  const totalPrice = rows.reduce(
+    (sum, row) => sum + Number(row.price || 0),
+    0
+  )
+
+  if (body.length > 0) {
+    body[body.length - 1][5] = toCell(`${toFa(totalPrice)} تومان`)
+  }
+
   return [header, ...body]
 }
 

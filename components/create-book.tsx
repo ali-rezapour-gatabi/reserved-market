@@ -353,10 +353,6 @@ export function CreateBook({
       }
     }
 
-    if (sessions.some((date) => date < today)) {
-      return "نمی‌توانید برای روزهای گذشته نوبت ثبت کنید."
-    }
-
     return ""
   }
 
@@ -374,13 +370,13 @@ export function CreateBook({
       customer: {
         full_name: form.fullName.trim(),
         phone: form.phone.trim(),
+        referral: form.referral.trim(),
       },
       service_ids: pickedServices.map((item) => item.id),
       therapist_id: form.therapistId ? Number(form.therapistId) : null,
       appointment: {
         status: form.status,
         notes: form.notes.trim(),
-        referral: form.referral.trim() || undefined,
         price: appointmentPrice,
       },
       sessions: sessions.map((date): SessionRange => {
@@ -483,6 +479,7 @@ export function CreateBook({
                         if (customer.phone.length > 0) {
                           update("phone", customer.phone)
                         }
+                        update("referral", customer.referral ?? "")
                       }}
                       inputClassName={cn(inputClass, "ps-9 text-start")}
                     />
@@ -535,8 +532,8 @@ export function CreateBook({
                     pickedServices.length > 0
                       ? `${toFa(pickedServices.length)} خدمت • مجموع ${toFa(durationMinutes)} دقیقه`
                       : `انتخاب خدمت اجباری نیست؛ در نبود خدمت، مدت پیش‌فرض ${toFa(
-                          DEFAULT_SESSION_MINUTES
-                        )} دقیقه در نظر گرفته می‌شود.`
+                        DEFAULT_SESSION_MINUTES
+                      )} دقیقه در نظر گرفته می‌شود.`
                   }
                 >
                   <Field label="خدمات ماساژ (چند انتخابی)">
@@ -731,6 +728,7 @@ export function CreateBook({
                         value={form.dates}
                         onChange={(value) => update("dates", value)}
                         minDate={today}
+                        allowPast={true}
                         maxSelection={MAX_SESSIONS}
                         placeholder="انتخاب روزها"
                       />
@@ -744,6 +742,7 @@ export function CreateBook({
                             value={form.startDate}
                             onChange={(value) => update("startDate", value)}
                             minDate={today}
+                            allowPast={true}
                             placeholder="انتخاب تاریخ شروع"
                             className="w-full"
                           />
@@ -794,13 +793,12 @@ export function CreateBook({
                             key={date.toISOString()}
                             className="rounded-lg bg-primary/10 px-2.5 py-1 text-xs text-primary"
                           >
-                            {`${toFa(index + 1)}. ${
-                              form.time
-                                ? formatNumericDateTime(
-                                    combineDateAndTime(date, form.time)
-                                  )
-                                : formatSession(date)
-                            }`}
+                            {`${toFa(index + 1)}. ${form.time
+                              ? formatNumericDateTime(
+                                combineDateAndTime(date, form.time)
+                              )
+                              : formatSession(date)
+                              }`}
                           </li>
                         ))}
                       </ul>

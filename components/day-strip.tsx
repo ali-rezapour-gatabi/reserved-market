@@ -121,7 +121,13 @@ export function DayStrip({ selected, onSelect, className }: DayStripProps) {
 
       <div
         ref={scrollRef}
-        className="flex gap-2 overflow-x-auto px-4 py-3"
+        className="
+      flex gap-2 overflow-x-auto px-4 py-5
+      scrollbar-thin
+      scrollbar-thumb-primary/20
+      scrollbar-track-transparent
+      hover:scrollbar-thumb-primary/40
+    "
         aria-label="روزهای ماه"
       >
         {days.map((day) => {
@@ -140,14 +146,14 @@ export function DayStrip({ selected, onSelect, className }: DayStripProps) {
               onClick={() => onSelect(day)}
               className={cn(
                 "flex h-16 w-14 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border text-sm transition-colors outline-none",
-                "focus-visible:ring-2 focus-visible:ring-ring",
+                "focus-visible:ring-2 focus-visible:ring-ring cursor-pointer",
                 isSelected
                   ? "border-primary bg-primary font-medium text-primary-foreground shadow-sm"
                   : "border-transparent bg-muted/50 hover:bg-muted",
                 isPast && !isSelected && "opacity-60",
                 isToday &&
-                  !isSelected &&
-                  "border-secondary bg-secondary/30 font-medium text-secondary-foreground opacity-100"
+                !isSelected &&
+                "border-secondary bg-secondary/30 font-medium text-secondary-foreground opacity-100"
               )}
             >
               <span className="text-[11px] leading-none opacity-80">

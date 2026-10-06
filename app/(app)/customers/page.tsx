@@ -18,6 +18,7 @@ import { formatNumericDateTime, toFa, toFaDigits } from "@/lib/jalali"
 import { APPOINTMENT_STATUS_LABELS } from "@/lib/schedule"
 import {
   deleteAppointment,
+  deleteCustomer,
   listAllCustomers,
   listCustomerAppointments,
   updateCustomer,
@@ -46,8 +47,10 @@ export default function CustomersPage() {
   const [editingCustomer, setEditingCustomer] = useState(false)
   const [customerName, setCustomerName] = useState("")
   const [customerPhone, setCustomerPhone] = useState("")
+  const [customerReferral, setCustomerReferral] = useState("")
   const [customerError, setCustomerError] = useState("")
   const [savingCustomer, setSavingCustomer] = useState(false)
+  const [deletingCustomer, setDeletingCustomer] = useState(false)
   const requestId = useRef(0)
 
   useEffect(() => {
@@ -119,8 +122,37 @@ export default function CustomersPage() {
     if (!selectedCustomer) return
     setCustomerName(selectedCustomer.full_name)
     setCustomerPhone(selectedCustomer.phone)
+    setCustomerReferral(selectedCustomer.referral ?? "")
     setCustomerError("")
     setEditingCustomer(true)
+  }
+
+  const handleDeleteCustomer = async () => {
+    if (!selectedCustomer) return
+
+    const sessionCount = selectedCustomer.total_sessions
+    const warning =
+      sessionCount > 0
+        ? `با حذف «${selectedCustomer.full_name}»، ${toFa(sessionCount)} نوبت او هم برای همیشه حذف می‌شود. از حذف مطمئن هستید؟`
+        : `مشتری «${selectedCustomer.full_name}» حذف شود؟`
+
+    if (!window.confirm(warning)) {
+      return
+    }
+
+    setDeletingCustomer(true)
+    setCustomerError("")
+    try {
+      const rows = await deleteCustomer(selectedCustomer.id)
+      setCustomers(rows)
+      closeDetails(false)
+    } catch (error) {
+      setCustomerError(
+        error instanceof Error ? error.message : "حذف مشتری ناموفق بود."
+      )
+    } finally {
+      setDeletingCustomer(false)
+    }
   }
 
   const handleUpdateCustomer = async (
@@ -135,6 +167,7 @@ export default function CustomersPage() {
       const rows = await updateCustomer(selectedCustomer.id, {
         full_name: customerName,
         phone: customerPhone,
+        referral: customerReferral,
       })
       const updated = rows.find((row) => row.id === selectedCustomer.id)
       if (updated) {
@@ -213,6 +246,17 @@ export default function CustomersPage() {
           </span>
         ) : (
           <span className="text-muted-foreground">بدون شماره</span>
+        ),
+    },
+    {
+      key: "referral",
+      header: "معرف",
+      accessor: (row) => row.referral ?? "",
+      cell: (row) =>
+        row.referral ? (
+          <span>{row.referral}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
         ),
     },
     {
@@ -306,16 +350,28 @@ export default function CustomersPage() {
                     : selectedCustomer.full_name}
                 </DialogTitle>
                 {!editingCustomer && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="ml-10"
-                    onClick={startEditingCustomer}
-                  >
-                    <Pencil className="size-4" />
-                    ویرایش
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={startEditingCustomer}
+                    >
+                      <Pencil className="size-4" />
+                      ویرایش
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      disabled={deletingCustomer}
+                      onClick={() => void handleDeleteCustomer()}
+                      className="me-10"
+                    >
+                      <Trash2 className="size-4" />
+                      {deletingCustomer ? "در حال حذف..." : "حذف مشتری"}
+                    </Button>
+                  </div>
                 )}
               </DialogHeader>
 
@@ -342,6 +398,19 @@ export default function CustomersPage() {
                       onValueChange={setCustomerPhone}
                       maxLength={11}
                       placeholder="۰۹۱۲۳۴۵۶۷۸۹"
+                    />
+                  </div>
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label htmlFor="edit-customer-referral">معرف</Label>
+                    <Input
+                      id="edit-customer-referral"
+                      dir="rtl"
+                      value={customerReferral}
+                      onChange={(event) =>
+                        setCustomerReferral(event.target.value)
+                      }
+                      maxLength={120}
+                      placeholder="این مشتری را چه کسی معرفی کرده است؟ (اختیاری)"
                     />
                   </div>
                   {customerError && (
@@ -384,6 +453,12 @@ export default function CustomersPage() {
                         : "بدون شماره"}
                     </dd>
                   </div>
+                  <div>
+                    <dt className="text-xs text-muted-foreground">معرف</dt>
+                    <dd className="mt-1 font-medium">
+                      {selectedCustomer.referral || "—"}
+                    </dd>
+                  </div>
                 </dl>
               )}
 
@@ -401,66 +476,69 @@ export default function CustomersPage() {
 
               <section className="space-y-3">
                 <h3 className="font-semibold">سوابق نوبت‌ها</h3>
-                {sessionsLoading ? (
-                  <p className="text-sm text-muted-foreground">
-                    در حال بارگیری سوابق...
-                  </p>
-                ) : sessionsError ? (
-                  <p role="alert" className="text-sm text-destructive">
-                    {sessionsError}
-                  </p>
-                ) : sessions.length > 0 ? (
-                  <ol className="space-y-2">
-                    {sessions.map((session, index) => (
-                      <li
-                        key={session.id}
-                        className="grid gap-2 border-b pb-3 text-sm last:border-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
-                      >
-                        <div className="min-w-0 space-y-1">
-                          <p className="font-medium">
-                            جلسه {toFa(index + 1)} ·{" "}
-                            {formatNumericDateTime(new Date(session.start_at))}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            پایان:{" "}
-                            {formatNumericDateTime(new Date(session.end_at))}
-                            <span className="px-1">·</span>
-                            {session.service_names.join("، ") || "بدون خدمت"}
-                            {session.therapist_name
-                              ? ` · ${session.therapist_name}`
-                              : ""}
-                          </p>
-                        </div>
-                        <div className="flex items-center justify-between gap-3 sm:justify-end">
-                          <span
-                            className={`rounded-lg px-2.5 py-0.5 text-xs ${STATUS_STYLES[session.status] ?? "bg-muted text-muted-foreground"}`}
-                          >
-                            {APPOINTMENT_STATUS_LABELS[session.status] ??
-                              session.status}
-                          </span>
-                          <span className="text-xs whitespace-nowrap">
-                            {toFa(session.price)} تومان
-                          </span>
-                          <Button
-                            type="button"
-                            size="icon-xs"
-                            variant="ghost"
-                            onClick={() => void handleDeleteSession(session)}
-                            disabled={deletingSessionId === session.id}
-                            aria-label={`حذف جلسه ${toFa(index + 1)}`}
-                            title="حذف همین جلسه"
-                          >
-                            <Trash2 className="size-3.5 text-destructive" />
-                          </Button>
-                        </div>
-                      </li>
-                    ))}
-                  </ol>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    هنوز نوبتی برای این مشتری ثبت نشده است.
-                  </p>
-                )}
+                <div className="bg-primary/10 p-2 rounded-md">
+                  {sessionsLoading ? (
+                    <p className="text-sm text-muted-foreground">
+                      در حال بارگیری سوابق...
+                    </p>
+                  ) : sessionsError ? (
+                    <p role="alert" className="text-sm text-destructive">
+                      {sessionsError}
+                    </p>
+                  ) : sessions.length > 0 ? (
+                    <ol className="space-y-2">
+                      {sessions.map((session, index) => (
+                        <li
+                          key={session.id}
+                          className="grid gap-2 border-b pb-3 text-sm last:border-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                        >
+                          <div className="min-w-0 space-y-1">
+                            <p className="font-medium">
+                              جلسه {toFa(index + 1)} ·{" "}
+                              {formatNumericDateTime(new Date(session.start_at))}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              پایان:{" "}
+                              {formatNumericDateTime(new Date(session.end_at))}
+                              <span className="px-1">·</span>
+                              {session.service_names.join("، ") || "بدون خدمت"}
+                              {session.therapist_name
+                                ? ` · ${session.therapist_name}`
+                                : ""}
+                            </p>
+                          </div>
+                          <div className="flex items-center justify-between gap-3 sm:justify-end">
+                            <span
+                              className={`rounded-lg px-2.5 py-0.5 text-xs ${STATUS_STYLES[session.status] ?? "bg-muted text-muted-foreground"}`}
+                            >
+                              {APPOINTMENT_STATUS_LABELS[session.status] ??
+                                session.status}
+                            </span>
+                            <span className="text-xs whitespace-nowrap">
+                              {toFa(session.price)} تومان
+                            </span>
+                            <Button
+                              type="button"
+                              size="icon-xs"
+                              variant="ghost"
+                              onClick={() => void handleDeleteSession(session)}
+                              disabled={deletingSessionId === session.id}
+                              aria-label={`حذف جلسه ${toFa(index + 1)}`}
+                              title="حذف همین جلسه"
+                            >
+                              <Trash2 className="size-3.5 text-destructive" />
+                            </Button>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      هنوز نوبتی برای این مشتری ثبت نشده است.
+                    </p>
+                  )}
+                </div>
+
               </section>
             </>
           )}

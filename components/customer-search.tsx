@@ -107,6 +107,7 @@ export function CustomerSearch({
         full_name: trimmed,
         phone: "",
         notes: null,
+        referral: null,
         updated_at: "",
         isNew: true,
       },
@@ -130,6 +131,7 @@ export function CustomerSearch({
       full_name: trimmed,
       phone: "",
       notes: null,
+      referral: null,
       updated_at: "",
       isNew: true,
     }

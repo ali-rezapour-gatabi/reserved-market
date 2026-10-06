@@ -9,12 +9,14 @@ export type Customer = {
   full_name: string
   phone: string
   notes: string | null
+  referral: string | null
   updated_at: string
 }
 
 export type CustomerInput = {
   full_name: string
   phone: string
+  referral: string
 }
 
 export type CustomerListRow = Customer & {
@@ -65,13 +67,13 @@ export type NewBooking = {
   customer: {
     full_name: string
     phone: string
+    referral: string
   }
   service_ids: number[]
   therapist_id: number | null
   appointment: {
     status: AppointmentStatus
     notes: string
-    referral?: string
     price: number
   }
   sessions: SessionRange[]
@@ -85,7 +87,6 @@ export type AppointmentEdit = {
   end_at: string
   status: AppointmentStatus
   notes: string
-  referral?: string
 }
 
 export type AppointmentRow = {
@@ -307,7 +308,7 @@ export async function listCustomers(limit = 20) {
   const db = await getDatabase()
 
   return db.select<Customer[]>(
-    "SELECT id, full_name, phone, notes, updated_at FROM customers WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT ?",
+    "SELECT id, full_name, phone, notes, referral, updated_at FROM customers WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT ?",
     [limit]
   )
 }
@@ -320,6 +321,7 @@ export async function listAllCustomers() {
             customers.full_name,
             customers.phone,
             customers.notes,
+            customers.referral,
             customers.updated_at,
             COUNT(appointments.id) AS total_sessions,
             COALESCE(SUM(CASE WHEN appointments.status = 'completed' THEN 1 ELSE 0 END), 0) AS completed_sessions,
@@ -336,6 +338,7 @@ export async function updateCustomer(id: number, input: CustomerInput) {
   const db = await getDatabase()
   const fullName = input.full_name.trim()
   const phone = toEnDigits(input.phone).trim()
+  const referral = input.referral.trim()
 
   if (!fullName) {
     throw new Error("نام مشتری نمی‌تواند خالی باشد.")
@@ -357,8 +360,8 @@ export async function updateCustomer(id: number, input: CustomerInput) {
   }
 
   await db.execute(
-    "UPDATE customers SET full_name = ?, phone = ?, updated_at = ? WHERE id = ?",
-    [fullName, phone, new Date().toISOString(), id]
+    "UPDATE customers SET full_name = ?, phone = ?, referral = ?, updated_at = ? WHERE id = ?",
+    [fullName, phone, referral.length > 0 ? referral : null, new Date().toISOString(), id]
   )
 
   return listAllCustomers()
@@ -375,7 +378,7 @@ export async function searchCustomers(query: string, limit = 8) {
   const like = `%${needle}%`
 
   return db.select<Customer[]>(
-    `SELECT id, full_name, phone, notes, updated_at
+    `SELECT id, full_name, phone, notes, referral, updated_at
      FROM customers
      WHERE deleted_at IS NULL
        AND (
@@ -412,6 +415,7 @@ async function resolveCustomerId(customer: NewBooking["customer"]) {
   const db = await getDatabase()
   const fullName = customer.full_name
   const phone = customer.phone
+  const referral = customer.referral.trim()
 
   const rows =
     phone.length > 0
@@ -425,17 +429,17 @@ async function resolveCustomerId(customer: NewBooking["customer"]) {
         )
 
   if (rows.length > 0) {
-    await db.execute("UPDATE customers SET full_name = ? WHERE id = ?", [
-      fullName,
-      rows[0].id,
-    ])
+    await db.execute(
+      "UPDATE customers SET full_name = ?, referral = COALESCE(NULLIF(?, ''), referral) WHERE id = ?",
+      [fullName, referral, rows[0].id]
+    )
 
     return rows[0].id
   }
 
   const result = await db.execute(
-    "INSERT INTO customers (full_name, phone) VALUES (?, ?)",
-    [fullName, phone]
+    "INSERT INTO customers (full_name, phone, referral) VALUES (?, ?, ?)",
+    [fullName, phone, referral.length > 0 ? referral : null]
   )
 
   return Number(result.lastInsertId)
@@ -484,7 +488,7 @@ export async function createBooking(booking: NewBooking) {
 
   for (const session of booking.sessions) {
     const result = await db.execute(
-      "INSERT INTO appointments (customer_id, service_id, therapist_id, start_at, end_at, price, status, notes, referral , slug) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ? , ?)",
+      "INSERT INTO appointments (customer_id, service_id, therapist_id, start_at, end_at, price, status, notes, slug) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         customerId,
         services[0]?.id ?? null,
@@ -494,7 +498,6 @@ export async function createBooking(booking: NewBooking) {
         price,
         booking.appointment.status,
         booking.appointment.notes.length > 0 ? booking.appointment.notes : null,
-        booking.appointment.referral || null,
         slug,
       ]
     )
@@ -513,7 +516,7 @@ const appointmentSelect = `SELECT appointments.id,
             appointments.status,
             appointments.notes,
             appointments.therapist_id,
-            appointments.referral,
+            customers.referral,
             customers.full_name,
             customers.phone,
             therapists.name AS therapist_name
@@ -592,10 +595,9 @@ export async function updateAppointment(id: number, input: AppointmentEdit) {
   }
 
   await db.execute(
-    "UPDATE appointments SET service_id = ? , referral = ?, therapist_id = ?, start_at = ?, end_at = ?, price = ?, status = ?, notes = ?, updated_at = ? WHERE id = ?",
+    "UPDATE appointments SET service_id = ? , therapist_id = ?, start_at = ?, end_at = ?, price = ?, status = ?, notes = ?, updated_at = ? WHERE id = ?",
     [
       services[0]?.id ?? null,
-      input.referral || null,
       input.therapist_id,
       input.start_at,
       input.end_at,
@@ -704,4 +706,25 @@ export async function reopenDayAppointments(from: Date, to: Date) {
   )
 
   return result.rowsAffected
+}
+
+export async function deleteCustomer(id: number) {
+  const db = await getDatabase()
+
+  const appointments = await db.select<{ id: number }[]>(
+    "SELECT id FROM appointments WHERE customer_id = ?",
+    [id]
+  )
+
+  for (const appointment of appointments) {
+    await db.execute(
+      "DELETE FROM appointment_services WHERE appointment_id = ?",
+      [appointment.id]
+    )
+  }
+
+  await db.execute("DELETE FROM appointments WHERE customer_id = ?", [id])
+  await db.execute("DELETE FROM customers WHERE id = ?", [id])
+
+  return listAllCustomers()
 }
